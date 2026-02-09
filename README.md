@@ -1,4 +1,4 @@
-# dupeseek-ts
+# dupeseek
 
 An Electron application with Vue and TypeScript
 

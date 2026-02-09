@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
+import { promises as fs } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
@@ -51,6 +52,23 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+
+  // 返回指定路径下的所有子目录和子文件
+  ipcMain.handle('read-dir', async (_event, dirPath: string) => {
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true })
+      const dirs: string[] = []
+      const files: string[] = []
+      for (const dirent of entries) {
+        const full = join(dirPath, dirent.name)
+        if (dirent.isDirectory()) dirs.push(full)
+        else if (dirent.isFile()) files.push(full)
+      }
+      return { success: true, dirs, files }
+    } catch (err: unknown) {
+      return { success: false, error: String(err) }
+    }
+  })
 
   createWindow()
 

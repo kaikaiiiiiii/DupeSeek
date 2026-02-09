@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import Versions from './components/Versions.vue'
+import { ref } from 'vue'
 
 const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
+
+let data = ref([])
+
 </script>
 
 <template>
@@ -12,6 +16,7 @@ const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
     <span class="vue">Vue</span>
     and
     <span class="ts">TypeScript</span>
+    <span class="ts">{{ data }}</span>
   </div>
   <p class="tip">Please try pressing <code>F12</code> to open the devTool</p>
   <div class="actions">
