@@ -11,6 +11,7 @@ function createWindow(): void {
     height: 670,
     show: false,
     autoHideMenuBar: true,
+    title: 'DupeSeek',
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
