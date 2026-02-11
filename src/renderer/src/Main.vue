@@ -42,15 +42,11 @@
 import { ref, computed } from 'vue'
 import A from './components/A.vue'
 import B from './components/B.vue'
-import C from './components/C.vue'
-import D from './components/D.vue'
 
 // 标签栏配置
 const tabs = [
   { id: 'A', label: 'A', component: A },
   { id: 'B', label: 'B', component: B },
-  { id: 'C', label: 'C', component: C },
-  { id: 'D', label: 'D', component: D }
 ]
 
 // 当前激活的标签

@@ -14,7 +14,7 @@
   * 组件本身的宽度和高度为 100%，只受父组件的约束。
   * 顶部是一个 input 输入框，输入框内最左边有个圆角矩形 btn，内有一个+号。宽度为 100%。
   * [+]号 btn 点击时，打开浏览器内置的 “浏览本地文件/目录" 对话框，选择一个目录，将目录路径作为参数传递给列表。
-  * 下方是一个列表，项数不定，当项数超过组件高度时，出现滚动条并可上下滑动。
+  * 中部是一个列表，项数不定，当项数超过组件高度时，出现滚动条并可上下滑动。
   * 列表的每一项是一个子组件，子组件的描述由本组件传入。  
   * 列表的每一项，除了显示字符串以外，右侧还有一个 (-) btn，点击时删除该项。
 
@@ -23,31 +23,28 @@
 * 组件使用 <script setup lang="ts"> 和 <styple scoped>。
 * 组件会逐步完善，目前处于原型阶段，后续会优化，目前只实现组件间的组织和基本的互动演示。
 * CSS 修饰美化也会在后续逐步添加，目前只需要最基本的样式即可。
-* 我需求什么你就以最小的代码量实现，切勿自作主张添加多余的设计和代码，我还得费劲地去删，折磨你也折磨我。
+
 */
-import { ref } from 'vue'
+import { toRaw, ref } from 'vue'
 
 const directoryList = ref<string[]>([])
 
-const handleAddClick = () => {
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.webkitdirectory = true
-  input.multiple = false
+const handleAddClick = async () => {
+  const path = await (window as any).api.selectDirectory()
 
-  input.onchange = (e: Event) => {
-    const target = e.target as HTMLInputElement
-    if (target.files && target.files.length > 0) {
-      const path = target.files[0].webkitRelativePath
-      const directoryPath = path.split('/')[0]
-      if (!directoryList.value.includes(directoryPath)) {
-        directoryList.value.push(directoryPath)
-      }
-    }
+  if (path && !directoryList.value.includes(path)) {
+    directoryList.value.push(path)
   }
-
-  input.click()
 }
+
+const scandir = (): void => {
+  const raw = toRaw(directoryList.value)
+  console.log(raw)
+  window.electron.ipcRenderer.send('scan-dir', raw)
+}
+
+
+const sendPing = (): void => window.electron.ipcRenderer.send('ping')
 
 const removeItem = (index: number) => {
   directoryList.value.splice(index, 1)
@@ -58,22 +55,21 @@ const removeItem = (index: number) => {
   <div class="directory-list">
     <div class="input-container">
       <button class="add-btn" @click="handleAddClick">+</button>
-      <input type="text" placeholder="添加目录路径" @keydown.enter="(e: any) => {
-        if (e.target.value.trim()) {
-          directoryList.push(e.target.value.trim())
-          e.target.value = ''
-        }
-      }" />
     </div>
 
     <div class="list-container">
-      <div v-for="(item, index) in directoryList" :key="index" class="list-item">
+      <div v-for="(item, index) in directoryList" :key="item" class="list-item">
         <span class="item-text">{{ item }}</span>
         <button class="remove-btn" @click="removeItem(index)">-</button>
       </div>
     </div>
+    <div class="button-container">
+      <button class="scan-folder" @click="scandir">SCAN</button>
+      <button class="scan-folder" @click="sendPing">Ping</button>
+    </div>
   </div>
 </template>
+
 
 <style scoped>
 .directory-list {

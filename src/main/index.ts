@@ -1,10 +1,10 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
-import { promises as fs } from 'fs'
+import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
@@ -35,6 +35,8 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  return mainWindow
 }
 
 // This method will be called when Electron has finished
@@ -51,27 +53,27 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  const mainWindow = createWindow()
+
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+  ipcMain.handle('select-directory', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory']
+    })
 
-  // 返回指定路径下的所有子目录和子文件
-  ipcMain.handle('read-dir', async (_event, dirPath: string) => {
-    try {
-      const entries = await fs.readdir(dirPath, { withFileTypes: true })
-      const dirs: string[] = []
-      const files: string[] = []
-      for (const dirent of entries) {
-        const full = join(dirPath, dirent.name)
-        if (dirent.isDirectory()) dirs.push(full)
-        else if (dirent.isFile()) files.push(full)
-      }
-      return { success: true, dirs, files }
-    } catch (err: unknown) {
-      return { success: false, error: String(err) }
-    }
+    if (result.canceled) return null
+    return result.filePaths[0] // 直接是绝对路径
   })
 
-  createWindow()
+  ipcMain.on('scan-dir', (event, dirPath) => {
+    console.log(dirPath)
+    // 执行扫描
+    const files: string[] = fs.readdirSync(dirPath[0])
+    console.log(files)
+    mainWindow.webContents.send('scan-result', files)
+  })
+
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
