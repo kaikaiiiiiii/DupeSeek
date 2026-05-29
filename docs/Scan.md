@@ -1,8 +1,8 @@
-# ScanSetting.md
+# Scan.md
 
-扫描设置组件（ScanSettings.vue）位于 DupeSeek 主界面功能区右侧下方，通过 Tabs 组件切换显示。
+扫描设置组件（Scan.vue）位于 DupeSeek 主界面功能区右侧下方，通过 Tabs 组件切换显示。
 
-以下描述的方便均为 ScanSettings.vue 自身的位置，不涉及布局容器包裹外的位置。
+以下描述的均为 Scan.vue 自身的位置，不涉及布局容器包裹外的位置。
 
 ## 界面设计
 
