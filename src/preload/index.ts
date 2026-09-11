@@ -1,14 +1,35 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { CleanAction, DupeSeekApi, ScanSettings } from '../shared/types'
 
-// Custom APIs for renderer
-const api = {
-  selectDirectory: () => ipcRenderer.invoke('select-directory')
+function subscribe<T>(channel: string): (cb: (payload: T) => void) => () => void {
+  return (cb) => {
+    const listener = (_: unknown, payload: T): void => cb(payload)
+    ipcRenderer.on(channel, listener)
+    return () => {
+      ipcRenderer.removeListener(channel, listener)
+    }
+  }
 }
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
+const api: DupeSeekApi = {
+  selectTargets: (kind) => ipcRenderer.invoke('dialog:select-targets', kind),
+  listDir: (path) => ipcRenderer.invoke('fs:list', path),
+  places: () => ipcRenderer.invoke('fs:places'),
+  reveal: (path) => ipcRenderer.invoke('fs:reveal', path),
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  scanStart: (settings: ScanSettings) => ipcRenderer.invoke('scan:start', settings),
+  scanStop: (sessionId) => ipcRenderer.send('scan:stop', sessionId),
+  cleanRun: (action: CleanAction) => ipcRenderer.invoke('clean:run', action),
+  getSettings: () => ipcRenderer.invoke('app:get-settings'),
+  setSettings: (patch) => ipcRenderer.invoke('app:set-settings', patch),
+
+  onScanProgress: subscribe('scan:progress'),
+  onScanGroup: subscribe('scan:group'),
+  onScanDone: subscribe('scan:done'),
+  onScanError: subscribe('scan:error')
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)

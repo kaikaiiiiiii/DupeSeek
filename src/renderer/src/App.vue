@@ -1,31 +1,104 @@
+<template>
+  <div class="app-root">
+    <aside class="app-left">
+      <TargetList />
+    </aside>
+    <div class="app-right">
+      <nav class="tab-bar">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          class="tab-btn"
+          :class="{ active: activeTab === tab.id }"
+          @click="activeTab = tab.id"
+        >
+          {{ tab.label }}
+        </button>
+      </nav>
+      <div class="tab-content">
+        <KeepAlive>
+          <component :is="current" />
+        </KeepAlive>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
-import Versions from './components/Versions.vue'
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import DupeList from './components/DupeList.vue'
+import ExplorerView from './components/ExplorerView.vue'
+import ScanView from './components/ScanView.vue'
+import TargetList from './components/TargetList.vue'
+import { useDupeStore } from './stores/dupe'
+import { useScanStore } from './stores/scan'
+import { useSettingsStore } from './stores/settings'
+import { useTargetStore } from './stores/target'
 
-const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
+const tabs = [
+  { id: 'explorer', label: '浏览', component: ExplorerView },
+  { id: 'scan', label: '扫描', component: ScanView },
+  { id: 'dupes', label: '清理', component: DupeList }
+] as const
 
-let data = ref([])
+type TabId = (typeof tabs)[number]['id']
 
+const activeTab = ref<TabId>('explorer')
+const current = computed(
+  () => tabs.find((t) => t.id === activeTab.value)?.component ?? ExplorerView
+)
+
+onMounted(async () => {
+  const settings = await useSettingsStore().load()
+  useTargetStore().init(settings.targets)
+  useScanStore().initDraft(settings.scanDraft)
+  useDupeStore().reset()
+})
 </script>
 
-<template>
-  <img alt="logo" class="logo" src="./assets/electron.svg" />
-  <div class="creator">Powered by electron-vite</div>
-  <div class="text">
-    Build an Electron app with
-    <span class="vue">Vue</span>
-    and
-    <span class="ts">TypeScript</span>
-    <span class="ts">{{ data }}</span>
-  </div>
-  <p class="tip">Please try pressing <code>F12</code> to open the devTool</p>
-  <div class="actions">
-    <div class="action">
-      <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">Documentation</a>
-    </div>
-    <div class="action">
-      <a target="_blank" rel="noreferrer" @click="ipcHandle">Send IPC</a>
-    </div>
-  </div>
-  <Versions />
-</template>
+<style scoped>
+.app-root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  gap: 10px;
+}
+
+.app-left {
+  flex: 0 0 280px;
+  min-width: 220px;
+}
+
+.app-right {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.tab-btn {
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: var(--hover-bg);
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: var(--bg);
+  font-weight: 600;
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.tab-content {
+  flex: 1;
+  min-height: 0;
+}
+</style>

@@ -1,8 +1,8 @@
 # IPC.md — 前后端 IPC 通信协议
 
-> v0.1 草案（2026-09-12）。类型引用见 [DataModel.md](./DataModel.md)。
+> v0.2（2026-09-12）。类型引用见 [DataModel.md](./DataModel.md)，实现在 `src/main/ipc.ts` 与 `src/preload/index.ts`。
 >
-> 原则：渲染层**永不直接触碰 fs**，一切文件系统能力经本协议由主进程提供；耗时操作全部走主进程 + worker，进度以事件回流。
+> **实现状态**：基础通道全部落地（dialog/fs/scan/clean/settings + 四个 scan 事件）。`everything:detect` 与 Everything 枚举加速为后续迭代，未实现。
 
 ## 1. 约定
 

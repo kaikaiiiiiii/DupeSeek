@@ -1,8 +1,10 @@
 # Store.md — Pinia 状态管理设计
 
-> v0.1 草案（2026-09-12）。类型引用见 [DataModel.md](./DataModel.md)，通道定义见 [IPC.md](./IPC.md)。
+> v0.2（2026-09-12）。类型引用见 [DataModel.md](./DataModel.md)，通道定义见 [IPC.md](./IPC.md)。
 >
-> 原则：组件之间不直接传数据，一律通过 store；渲染层不持有任何 fs 状态的"私有副本"。store 只存轻量引用与大列表的不可变数组，重列表渲染交给虚拟滚动（见 DupeSeek.md）。
+> **实现状态**：settings / target / explorer / scan / dupe 五个 store 已落地（`src/renderer/src/stores/`）。treesize store 与 scan:group 之外的增强为后续迭代。
+>
+> 原则：组件之间不直接传数据，一律通过 store；渲染层不持有任何 fs 状态的"私有副本"。store 只存轻量引用与大列表的不可变数组，重列表渲染交给虚拟滚动（virtua VList，封装见 `VirtualScrollList.vue`）。
 
 ## 1. Store 一览
 
