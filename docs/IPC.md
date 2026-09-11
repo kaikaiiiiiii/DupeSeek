@@ -37,11 +37,14 @@
 
 事件均携带 `sessionId`，渲染层收到**过期 sessionId** 的事件必须丢弃（防止上一轮扫描的残包污染新一轮）。
 
-## 4. Everything 集成说明
+## 4. Everything 集成说明（已实现）
 
-- Everything 只影响主进程内部的**枚举阶段**（获取 name+size 代替递归 walk），对渲染层完全透明，因此**不单开 channel**，仅 `everything:detect` 供设置页展示状态。
-- 检测顺序：注册表/常见安装路径找 Everything.exe → 探测其 HTTP 服务（默认 `127.0.0.1`，端口以 Everything 设置为准，需用户在 Everything 中开启）→ 回退 `es.exe` 命令行 → 都不可用则走内置 fs.walk。
-- 枚举结果与 fs.walk 输出**结构完全一致**（都是 FileEntry 的 meta 部分），比对阶梯不感知数据来源。
+- Everything 只影响主进程内部的**枚举阶段**（代替递归 fs.walk 获取文件/目录清单），对渲染层完全透明，不单开 IPC channel。
+- **通道**：es.exe（voidtools 官方 CLI，随应用分发在 `resources/bin/`，经 IPC 消息与运行中的 Everything 通信，无需 HTTP 服务）。定位顺序：打包资源 → 开发目录 → Everything 安装目录。
+- **查询**：每个目标目录两次调用——`-path <目标> -a-d-L` 取文件、`-path <目标> -ad-L` 取目录（均排除 reparse point，对应 walk 的 junction 排除），布局为 `-full-path-and-name -size -date-modified -size-format 1 -date-format 3`，经 `-export-json` 落临时文件（UTF-8 BOM）后解析。
+- **回退（逐目标）**：es.exe 缺失、Everything 未运行、查询失败，或"目标目录非空但 Everything 返回 0 条"（未收录，如非 NTFS 卷）时，该目标回退 fs.walk；其余目标不受影响。
+- 枚举结果与 fs.walk 输出**结构完全一致**（FileEntry 的 meta 部分），过滤规则（隐藏/系统/扩展名/大小）与比对阶梯不感知数据来源。
+- 约束：Everything 只收录 NTFS 卷；junction 排除依赖 `attributes:L`，Everything 索引延迟（约秒级）对新建文件生效。
 
 ## 5. preload 暴露面（`window.api`）
 
@@ -51,9 +54,9 @@ interface DupeSeekApi {
   listDir(path: string): Promise<DirEntry[]>
   places(): Promise<{ favorites: FavoriteItem[]; drives: FavoriteItem[] }>
   reveal(path: string): Promise<void>
+  pathForFile(file: File): string
   scanStart(settings: ScanSettings): Promise<string>
-  scanStop(sessionId: string): Promise<void>
-  everythingDetect(): Promise<EverythingStatus>
+  scanStop(sessionId: string): void
   cleanRun(action: CleanAction): Promise<CleanReport>
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>

@@ -13,12 +13,12 @@ export interface WalkContext {
   onError: (p: string, err: unknown) => void
 }
 
-function extOf(name: string): string {
+export function extOf(name: string): string {
   const i = name.lastIndexOf('.')
   return i > 0 ? name.slice(i) : ''
 }
 
-function extAllowed(cls: string, settings: ScanSettings): boolean {
+export function extAllowed(cls: string, settings: ScanSettings): boolean {
   const ext = cls.replace(/^\./, '').toLowerCase()
   if (settings.extBlacklist.some((b) => b.toLowerCase() === ext)) return false
   if (
@@ -111,7 +111,7 @@ export async function walkTargets(roots: string[], ctx: WalkContext): Promise<vo
   }
 }
 
-function settingsExcludesDir(name: string, settings: ScanSettings): boolean {
+export function settingsExcludesDir(name: string, settings: ScanSettings): boolean {
   if (settings.excludeHidden && name.startsWith('.')) return true
   if (settings.excludeSystem && SYSTEM_DIRS.has(name)) return true
   return false
