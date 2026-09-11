@@ -2,29 +2,31 @@
 
 > v0.2（2026-09-12）。类型引用见 [DataModel.md](./DataModel.md)，通道定义见 [IPC.md](./IPC.md)。
 >
-> **实现状态**：settings / target / explorer / scan / dupe 五个 store 已落地（`src/renderer/src/stores/`）。treesize store 与 scan:group 之外的增强为后续迭代。
+> **实现状态**：settings / target / explorer / scan / dupe / treesize 六个 store 已落地（`src/renderer/src/stores/`）。
 >
 > 原则：组件之间不直接传数据，一律通过 store；渲染层不持有任何 fs 状态的"私有副本"。store 只存轻量引用与大列表的不可变数组，重列表渲染交给虚拟滚动（virtua VList，封装见 `VirtualScrollList.vue`）。
 
 ## 1. Store 一览
 
-| Store | 职责 | 持久化 |
-| :--- | :--- | :--- |
-| `useSettingsStore` | 全局设置、Everything 可用状态 | JSON 文件（经 IPC） |
-| `useTargetStore` | 扫描目标列表 | 随设置持久化（⚠️ D4） |
-| `useExplorerStore` | Explorer 当前目录、导航历史、目录条目 | 否 |
-| `useScanStore` | 扫描设置草稿、扫描状态机、进度 | 否 |
-| `useDupeStore` | 重复组集合、筛选、选择器、清理执行 | 否（结果缓存后置） |
-| `useTreeSizeStore` | 目录体积树、展开/聚焦状态 | 否 |
+| Store              | 职责                                  | 持久化                |
+| :----------------- | :------------------------------------ | :-------------------- |
+| `useSettingsStore` | 全局设置、Everything 可用状态         | JSON 文件（经 IPC）   |
+| `useTargetStore`   | 扫描目标列表                          | 随设置持久化（⚠️ D4） |
+| `useExplorerStore` | Explorer 当前目录、导航历史、目录条目 | 否                    |
+| `useScanStore`     | 扫描设置草稿、扫描状态机、进度        | 否                    |
+| `useDupeStore`     | 重复组集合、筛选、选择器、清理执行    | 否（结果缓存后置）    |
+| `useTreeSizeStore` | 目录体积树、展开/聚焦状态             | 否                    |
 
 ## 2. useSettingsStore
 
 ```ts
 state: {
-  settings: AppSettings        // 启动时经 app:get-settings 载入
+  settings: AppSettings // 启动时经 app:get-settings 载入
   everything: EverythingStatus // 启动时探测一次，设置页可手动刷新
 }
-actions: { load(), save(patch), detectEverything() }
+actions: {
+  ;(load(), save(patch), detectEverything())
+}
 ```
 
 ## 3. useTargetStore
@@ -59,13 +61,15 @@ actions: { open(path), up(), back(), forward(), refresh() }
 
 ```ts
 state: {
-  draft: ScanSettings        // 表单草稿；启动扫描时快照传给主进程
+  draft: ScanSettings // 表单草稿；启动扫描时快照传给主进程
   sessionId: string | null
   status: 'idle' | 'scanning' | 'done' | 'error'
   progress: ScanProgress | null
   summary: ScanSummary | null
 }
-actions: { start(), stop(), reset() }
+actions: {
+  ;(start(), stop(), reset())
+}
 ```
 
 状态机：

@@ -4,6 +4,7 @@ import { defaultScanDraft } from '../../../shared/defaults'
 import type { ScanProgress, ScanSettings, ScanSummary } from '../../../shared/types'
 import { useDupeStore } from './dupe'
 import { useTargetStore } from './target'
+import { useTreeSizeStore } from './treesize'
 import { deepPlain } from '../utils/plain'
 
 export type ScanStatus = 'idle' | 'scanning' | 'done' | 'error'
@@ -43,6 +44,7 @@ export const useScanStore = defineStore('scan', () => {
     summary.value = s
     status.value = 'done'
     useDupeStore().markScanDone()
+    useTreeSizeStore().setTree(s.tree)
   })
   window.api.onScanError((p) => {
     if (status.value !== 'scanning') return
@@ -57,6 +59,7 @@ export const useScanStore = defineStore('scan', () => {
     if (targets.length === 0) throw new Error('请先在左侧添加扫描目标')
     draft.value = { ...draft.value, targets: [...targets] }
     useDupeStore().reset()
+    useTreeSizeStore().reset()
     summary.value = null
     progress.value = null
     error.value = ''

@@ -1,10 +1,12 @@
 import { randomUUID } from 'crypto'
+import path from 'path'
 import type {
   DupeGroup,
   FileEntry,
   ScanProgress,
   ScanSettings,
-  ScanSummary
+  ScanSummary,
+  ScanTreeNode
 } from '../../shared/types'
 import { md5FullFile, md5HeadFile } from './hash'
 import { walkTargets } from './walk'
@@ -16,6 +18,14 @@ const GROUP_FLUSH_MS = 500
 const PROGRESS_MS = 100
 
 type Broadcaster = (channel: string, payload: unknown) => void
+
+/** 目录聚合记录：枚举时登记，体积/重复沿祖先链累加 */
+interface DirAgg {
+  parent: string
+  name: string
+  size: number
+  dup: number
+}
 
 /** 有限并发的映射 */
 async function pMap<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -48,6 +58,8 @@ export class ScanEngine {
   private processed = 0
   private bytesHashed = 0
   private lastProgressAt = 0
+  private dirs = new Map<string, DirAgg>()
+  private rootParents = new Set<string>()
 
   constructor(broadcaster: Broadcaster) {
     this.broadcaster = broadcaster
@@ -71,6 +83,9 @@ export class ScanEngine {
     this.found = 0
     this.processed = 0
     this.bytesHashed = 0
+    this.dirs = new Map()
+    // 体积归集的停点：目标目录的父目录（大小只归到目标根为止）
+    this.rootParents = new Set(settings.targets.map((t) => path.dirname(t).toLowerCase()))
     this.sessionId = randomUUID()
     const sessionId = this.sessionId
     const startedAt = Date.now()
@@ -85,7 +100,8 @@ export class ScanEngine {
         dupeGroups: count,
         wastedBytes: wasted,
         durationMs: Date.now() - startedAt,
-        errors: this.errors
+        errors: this.errors,
+        tree: this.buildTree()
       }
       this.broadcaster('scan:done', summary)
       return sessionId
@@ -104,9 +120,11 @@ export class ScanEngine {
       canceled: (): boolean => this.canceled,
       onEntry: (e: FileEntry): void => {
         entries.push(e)
+        this.addBytes(e.path, e.size, false)
         lastPath.value = e.path
       },
       onDir: (p: string): void => {
+        this.recordDir(p)
         lastPath.value = p
       },
       onError: (): void => {
@@ -136,6 +154,59 @@ export class ScanEngine {
       percent: this.found > 0 ? Math.min(100, (this.processed / this.found) * 100) : 0
     }
     this.broadcaster('scan:progress', progress)
+  }
+
+  private recordDir(dir: string): void {
+    if (this.dirs.has(dir)) return
+    this.dirs.set(dir, {
+      parent: path.dirname(dir),
+      name: path.basename(dir) || dir,
+      size: 0,
+      dup: 0
+    })
+  }
+
+  /** 把字节数沿文件的祖先目录链累加到目标根为止 */
+  private addBytes(filePath: string, bytes: number, dup: boolean): void {
+    let p = path.dirname(filePath)
+    for (;;) {
+      const rec = this.dirs.get(p)
+      if (!rec) break
+      if (dup) rec.dup += bytes
+      else rec.size += bytes
+      if (this.rootParents.has(p.toLowerCase())) break
+      const parent = path.dirname(p)
+      if (parent === p) break
+      p = parent
+    }
+  }
+
+  /** 重复占用的归集口径：每组保留最早修改的一份，其余副本计入各自所在目录 */
+  private attributeDup(group: DupeGroup): void {
+    const kept = group.entries.reduce((a, b) => (a.mtime <= b.mtime ? a : b))
+    for (const e of group.entries) {
+      if (e.path !== kept.path) this.addBytes(e.path, e.size, true)
+    }
+  }
+
+  /** 由目录聚合记录构建体积树，子级按体积降序 */
+  private buildTree(): ScanTreeNode[] {
+    const nodes = new Map<string, ScanTreeNode>()
+    for (const [p, rec] of this.dirs) {
+      nodes.set(p, { name: rec.name, path: p, size: rec.size, dupWasted: rec.dup, children: [] })
+    }
+    const roots: ScanTreeNode[] = []
+    for (const [p, rec] of this.dirs) {
+      const node = nodes.get(p)
+      if (!node) continue
+      const parent = nodes.get(rec.parent)
+      if (parent) parent.children.push(node)
+      else roots.push(node)
+    }
+    const bySize = (a: ScanTreeNode, b: ScanTreeNode): number => b.size - a.size
+    for (const node of nodes.values()) node.children.sort(bySize)
+    roots.sort(bySize)
+    return roots
   }
 
   private async hashPhase(
@@ -184,6 +255,7 @@ export class ScanEngine {
           out.push(group)
           count++
           wasted += group.size * (group.entries.length - 1)
+          this.attributeDup(group)
         }
       }
       this.emitProgress(bucket[0]?.path ?? '')

@@ -2,7 +2,7 @@
 
 > v0.2（2026-09-12）。类型统一定义在 `src/shared/types.ts`（主进程 / preload / 渲染层三端共享）。
 >
-> **实现状态**：首个基础版已落地——普通文件的 L0（文件名+大小）→ headMD5（前 1MB）→ fullMD5 阶梯、空文件免哈希成组、增量回流、协作式取消；清理仅支持删除进回收站。压缩包条目（`containerPath`/`entryPath`/`archiveType`/crc32 门控）、EverythingStatus、ScanTreeNode 均为后续迭代预留，当前类型中已移除，届时随迭代恢复。
+> **实现状态**：普通文件的 L0（文件名+大小）→ headMD5（前 1MB）→ fullMD5 阶梯、空文件免哈希成组、增量回流、协作式取消、目录体积树（TreeSize，`ScanSummary.tree`）均已落地；清理仅支持删除进回收站。压缩包条目（`containerPath`/`entryPath`/`archiveType`/crc32 门控）与 Everything 为后续迭代，届时恢复相应字段。
 >
 > 标注 ⚠️ 的是待拍板的决策点，请评审时重点看。
 
@@ -10,19 +10,19 @@
 
 普通文件与压缩包内条目统一用同一结构表示，用 `containerPath` 是否为 null 区分来源：
 
-| 字段 | 类型 | 必须 | 说明 |
-| :--- | :--- | :--- | :--- |
-| path | string | y | 唯一 ID。普通文件为绝对路径；压缩包条目为 `容器路径!/包内路径` |
-| name | string | y | 文件名（含扩展名），压缩包条目取包内路径末段 |
-| containerPath | string \| null | y | 压缩包条目为容器绝对路径，普通文件为 null |
-| entryPath | string \| null | y | 压缩包内的条目路径（`/` 分隔），普通文件为 null |
-| archiveType | 'zip' \| '7z' \| 'rar' \| null | y | 压缩包条目的容器类型 |
-| size | number | y | 字节数（压缩包条目取包元信息中的未压缩大小） |
-| class | string | y | 扩展名（含 `.`），无扩展名为 `""` |
-| mtime | number | y | 毫秒时间戳；压缩包条目取包内元信息，取不到为 0 |
-| crc32 | number \| null | n | 比较阶梯中按需填充 |
-| headmd5 | string \| null | n | 文件前 1MB 的 md5，按需填充 |
-| fullmd5 | string \| null | n | 全量 md5，按需填充 |
+| 字段          | 类型                           | 必须 | 说明                                                           |
+| :------------ | :----------------------------- | :--- | :------------------------------------------------------------- |
+| path          | string                         | y    | 唯一 ID。普通文件为绝对路径；压缩包条目为 `容器路径!/包内路径` |
+| name          | string                         | y    | 文件名（含扩展名），压缩包条目取包内路径末段                   |
+| containerPath | string \| null                 | y    | 压缩包条目为容器绝对路径，普通文件为 null                      |
+| entryPath     | string \| null                 | y    | 压缩包内的条目路径（`/` 分隔），普通文件为 null                |
+| archiveType   | 'zip' \| '7z' \| 'rar' \| null | y    | 压缩包条目的容器类型                                           |
+| size          | number                         | y    | 字节数（压缩包条目取包元信息中的未压缩大小）                   |
+| class         | string                         | y    | 扩展名（含 `.`），无扩展名为 `""`                              |
+| mtime         | number                         | y    | 毫秒时间戳；压缩包条目取包内元信息，取不到为 0                 |
+| crc32         | number \| null                 | n    | 比较阶梯中按需填充                                             |
+| headmd5       | string \| null                 | n    | 文件前 1MB 的 md5，按需填充                                    |
+| fullmd5       | string \| null                 | n    | 全量 md5，按需填充                                             |
 
 `path` 同时充当显示用的完整路径与去重键，不再单设 `fullpath` 字段。哈希字段全部按需（懒）计算，避免无谓 I/O。
 
@@ -48,20 +48,20 @@ L3 fullMD5：不同 → 独立文件；相同 → 重复
 
 ## 3. 扫描设置 ScanSettings
 
-| 字段 | 类型 | 默认 | 说明 |
-| :--- | :--- | :--- | :--- |
-| targets | string[] | [] | 绝对路径，可为目录或单个文件，允许 1..n 个 |
-| ignoreName | boolean | false | true 时 L0 仅按 size 分组 |
-| excludeHidden | boolean | false | 排除隐藏文件/目录 |
-| excludeSystem | boolean | false | 排除系统文件 |
-| excludeJunction | boolean | true | 跳过 junction / 目录符号链接 |
-| minSize | number \| null | null | 字节阈值，含边界 |
-| maxSize | number \| null | null | 字节阈值，含边界 |
-| extBlacklist | string[] | [] | 如 `['exe','dll']`，先黑后白 |
-| extWhitelist | string[] | [] | 非空时仅保留命中项 |
-| scanArchives | boolean | true | 是否将 zip/7z/rar 内条目纳入比对 |
-| archiveTypes | Array<'zip'\|'7z'\|'rar'> | ['zip','7z','rar'] | 首期固定三种 |
-| useEverything | boolean | true | 检测到 Everything 时允许用其接口加速枚举（仅影响枚举速度，不改变比对逻辑） |
+| 字段            | 类型                      | 默认               | 说明                                                                       |
+| :-------------- | :------------------------ | :----------------- | :------------------------------------------------------------------------- |
+| targets         | string[]                  | []                 | 绝对路径，可为目录或单个文件，允许 1..n 个                                 |
+| ignoreName      | boolean                   | false              | true 时 L0 仅按 size 分组                                                  |
+| excludeHidden   | boolean                   | false              | 排除隐藏文件/目录                                                          |
+| excludeSystem   | boolean                   | false              | 排除系统文件                                                               |
+| excludeJunction | boolean                   | true               | 跳过 junction / 目录符号链接                                               |
+| minSize         | number \| null            | null               | 字节阈值，含边界                                                           |
+| maxSize         | number \| null            | null               | 字节阈值，含边界                                                           |
+| extBlacklist    | string[]                  | []                 | 如 `['exe','dll']`，先黑后白                                               |
+| extWhitelist    | string[]                  | []                 | 非空时仅保留命中项                                                         |
+| scanArchives    | boolean                   | true               | 是否将 zip/7z/rar 内条目纳入比对                                           |
+| archiveTypes    | Array<'zip'\|'7z'\|'rar'> | ['zip','7z','rar'] | 首期固定三种                                                               |
+| useEverything   | boolean                   | true               | 检测到 Everything 时允许用其接口加速枚举（仅影响枚举速度，不改变比对逻辑） |
 
 ## 4. 扫描会话与进度
 
@@ -69,11 +69,11 @@ L3 fullMD5：不同 → 独立文件；相同 → 重复
 interface ScanProgress {
   sessionId: string
   phase: 'listing' | 'hashing' | 'archive' | 'finalizing'
-  filesFound: number        // 已发现的候选条目数
-  filesProcessed: number    // 已完成比对（含免哈希）的条目数
-  bytesHashed: number       // 已读取并哈希的字节数
-  currentPath: string       // 正在处理的路径
-  percent: number           // 0-100 估算值（哈希阶段按字节权重，枚举阶段按条目数）
+  filesFound: number // 已发现的候选条目数
+  filesProcessed: number // 已完成比对（含免哈希）的条目数
+  bytesHashed: number // 已读取并哈希的字节数
+  currentPath: string // 正在处理的路径
+  percent: number // 0-100 估算值（哈希阶段按字节权重，枚举阶段按条目数）
 }
 
 interface ScanSummary {
@@ -90,8 +90,8 @@ interface ScanSummary {
 
 ```ts
 interface DupeGroup {
-  key: string          // 最终判定依据：fullmd5 或空文件 size 键
-  size: number         // 组内条目统一大小
+  key: string // 最终判定依据：fullmd5 或空文件 size 键
+  size: number // 组内条目统一大小
   entries: FileEntry[] // 全部成员，length ≥ 2
 }
 // wastedBytes = (entries.length - 1) * size，由 getter 派生，不入库
@@ -110,7 +110,7 @@ interface CleanAction {
   keepPaths: string[]
   removePaths: string[]
   options?: {
-    mergeTargetDir?: string  // mergeMove 的目标目录
+    mergeTargetDir?: string // mergeMove 的目标目录
   }
 }
 
@@ -118,7 +118,7 @@ interface CleanReport {
   ok: number
   failed: Array<{ path: string; reason: string }>
   freedBytes: number
-  logPath: string | null   // mergeMove 生成的恢复 log 路径
+  logPath: string | null // mergeMove 生成的恢复 log 路径
 }
 ```
 
@@ -133,31 +133,31 @@ interface DirEntry {
   name: string
   path: string
   isDir: boolean
-  size: number      // 目录恒为 0（不显示）
+  size: number // 目录恒为 0（不显示）
   mtime: number
-  class: string     // 扩展名（含点），目录为 ""
+  class: string // 扩展名（含点），目录为 ""
 }
 
 interface FavoriteItem {
   label: string
   path: string
-  builtin: boolean  // 预置（桌面/文档/下载/盘符…）不可删除；用户收藏为 false
+  builtin: boolean // 预置（桌面/文档/下载/盘符…）不可删除；用户收藏为 false
 }
 
 interface EverythingStatus {
   installed: boolean
   version: string | null
-  usable: boolean       // installed 且接口可用（HTTP 服务开启或 es.exe 可用）
+  usable: boolean // installed 且接口可用（HTTP 服务开启或 es.exe 可用）
   channel: 'http' | 'es' | 'sdk' | null
 }
 ```
 
 ## 8. 决策点汇总
 
-| 编号 | 问题 | 草案倾向 |
-| :--- | :--- | :--- |
-| D1 | crc32 门控是否覆盖普通文件 | 否，仅压缩包条目（理由见 §2.1） |
-| D2 | mtime/ctime/扩展名是否参与分组 key | 否，降级为筛选条件（理由见 §2.4） |
-| D3 | delete 默认进回收站还是直接删除 | 回收站（Electron `shell.trashItem`） |
-| D4 | 目标列表（TargetList）是否持久化 | 是，随全局设置一起存 |
-| D5 | 压缩包条目 ID 的 `容器!/条目` 约定 | 采纳，注意 Windows 路径中 `!` 合法 |
+| 编号 | 问题                               | 草案倾向                             |
+| :--- | :--------------------------------- | :----------------------------------- |
+| D1   | crc32 门控是否覆盖普通文件         | 否，仅压缩包条目（理由见 §2.1）      |
+| D2   | mtime/ctime/扩展名是否参与分组 key | 否，降级为筛选条件（理由见 §2.4）    |
+| D3   | delete 默认进回收站还是直接删除    | 回收站（Electron `shell.trashItem`） |
+| D4   | 目标列表（TargetList）是否持久化   | 是，随全局设置一起存                 |
+| D5   | 压缩包条目 ID 的 `容器!/条目` 约定 | 采纳，注意 Windows 路径中 `!` 合法   |
