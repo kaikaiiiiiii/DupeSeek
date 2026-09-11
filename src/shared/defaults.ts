@@ -1,4 +1,4 @@
-import type { ScanSettings } from './types'
+import type { ArchiveType, ScanSettings } from './types'
 
 export function defaultScanDraft(): ScanSettings {
   return {
@@ -10,6 +10,8 @@ export function defaultScanDraft(): ScanSettings {
     minSize: null,
     maxSize: null,
     extBlacklist: [],
-    extWhitelist: []
+    extWhitelist: [],
+    scanArchives: true,
+    archiveTypes: ['zip', '7z', 'rar'] as ArchiveType[]
   }
 }

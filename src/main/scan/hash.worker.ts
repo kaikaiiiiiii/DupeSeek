@@ -1,16 +1,49 @@
 import { parentPort } from 'worker_threads'
 import { md5FullFile, md5HeadFile } from './hash'
+import { hashArchiveEntry, listArchive } from './archives'
+import type { ArchiveType } from '../../shared/types'
 
 interface HashJob {
   id: number
-  kind: 'head' | 'full'
-  path: string
+  kind: 'md5-head' | 'md5-full' | 'archive-list' | 'archive-head' | 'archive-full'
+  /** md5-head / md5-full */
+  path?: string
   cap?: number
+  /** archive-* 任务 */
+  archiveType?: ArchiveType
+  archivePath?: string
+  entryPath?: string
 }
 
-/** 单 worker 一次只处理一个任务，由 HashPool 调度；读取失败返回 null */
+/** 单 worker 一次只处理一个任务，由 HashPool 调度；失败以 null 结算 */
 parentPort?.on('message', (job: HashJob) => {
-  const run =
-    job.kind === 'head' ? md5HeadFile(job.path, job.cap ?? 1024 * 1024) : md5FullFile(job.path)
-  void run.then((md5) => parentPort?.postMessage({ id: job.id, md5 }))
+  void (async () => {
+    let value: unknown = null
+    try {
+      switch (job.kind) {
+        case 'md5-head':
+          value = await md5HeadFile(job.path as string, job.cap ?? 1024 * 1024)
+          break
+        case 'md5-full':
+          value = await md5FullFile(job.path as string)
+          break
+        case 'archive-list':
+          value = await listArchive(job.archivePath as string, job.archiveType as ArchiveType)
+          break
+        case 'archive-head':
+        case 'archive-full':
+          value = await hashArchiveEntry(
+            job.archivePath as string,
+            job.entryPath as string,
+            job.archiveType as ArchiveType,
+            job.kind === 'archive-head' ? job.cap : undefined
+          )
+          break
+      }
+    } catch (err) {
+      console.error('[hash-worker] 任务失败', job.kind, err)
+      value = null
+    }
+    parentPort?.postMessage({ id: job.id, value })
+  })()
 })

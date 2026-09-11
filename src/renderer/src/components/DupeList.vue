@@ -56,11 +56,23 @@
           <div
             v-else
             class="entry-row"
-            :class="{ kept: isKept((item as EntryRow).group, (item as EntryRow).entry) }"
-            @click="dupe.setKeep((item as EntryRow).group.id, (item as EntryRow).entry.path)"
+            :class="{
+              kept: isKept((item as EntryRow).group, (item as EntryRow).entry),
+              readonly: (item as EntryRow).entry.containerPath !== null
+            }"
+            :title="
+              (item as EntryRow).entry.containerPath !== null
+                ? '压缩包内条目仅参与查重，不参与清理'
+                : '点击设为保留项'
+            "
+            @click="setKeep((item as EntryRow).group, (item as EntryRow).entry)"
           >
             <span class="keep-mark">{{
-              isKept((item as EntryRow).group, (item as EntryRow).entry) ? '● 保留' : '○'
+              (item as EntryRow).entry.containerPath !== null
+                ? '📦'
+                : isKept((item as EntryRow).group, (item as EntryRow).entry)
+                  ? '● 保留'
+                  : '○'
             }}</span>
             <span class="entry-path" :title="(item as EntryRow).entry.path">{{
               (item as EntryRow).entry.path
@@ -111,6 +123,12 @@ const canClean = computed(
 
 function isKept(group: DupeGroupView, entry: FileEntry): boolean {
   return dupe.keepChoice[group.id] === entry.path
+}
+
+/** 压缩包内条目不可作为保留件（无法被清理动作触碰） */
+function setKeep(group: DupeGroupView, entry: FileEntry): void {
+  if (entry.containerPath !== null) return
+  dupe.setKeep(group.id, entry.path)
 }
 
 function keepDisplay(group: DupeGroupView): string {
@@ -247,6 +265,11 @@ async function clean(): Promise<void> {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.entry-row.readonly {
+  color: var(--muted);
+  cursor: default;
 }
 
 .entry-mtime {

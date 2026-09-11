@@ -45,6 +45,10 @@ async function collectFile(fullPath: string, name: string, ctx: WalkContext): Pr
       size: st.size,
       class: cls,
       mtime: Math.floor(st.mtimeMs),
+      containerPath: null,
+      entryPath: null,
+      archiveType: null,
+      crc32: null,
       headmd5: null,
       fullmd5: null
     })

@@ -1,8 +1,8 @@
 # DataModel.md — 共享数据结构与计算逻辑
 
-> v0.2（2026-09-12）。类型统一定义在 `src/shared/types.ts`（主进程 / preload / 渲染层三端共享）。
+> v0.3（2026-09-12）。类型统一定义在 `src/shared/types.ts`（主进程 / preload / 渲染层三端共享），与代码同步维护。
 >
-> **实现状态**：普通文件的 L0（文件名+大小）→ headMD5（前 1MB）→ fullMD5 阶梯、空文件免哈希成组、增量回流、协作式取消、目录体积树（TreeSize，`ScanSummary.tree`）均已落地；清理仅支持删除进回收站。压缩包条目（`containerPath`/`entryPath`/`archiveType`/crc32 门控）与 Everything 为后续迭代，届时恢复相应字段。
+> **实现状态（v0.3）**：普通文件与压缩包条目统一参与 L0（文件名+大小）→ crc32（仅压缩包条目，元信息免费）→ headMD5（解压前 1MB）→ fullMD5（解压全量）阶梯；空文件免哈希成组；Everything 枚举通道、worker 线程池哈希、目录体积树均已落地。清理仅支持删除进回收站（压缩包内条目不参与清理）。
 >
 > 标注 ⚠️ 的是待拍板的决策点，请评审时重点看。
 
@@ -15,12 +15,12 @@
 | path          | string                         | y    | 唯一 ID。普通文件为绝对路径；压缩包条目为 `容器路径!/包内路径` |
 | name          | string                         | y    | 文件名（含扩展名），压缩包条目取包内路径末段                   |
 | containerPath | string \| null                 | y    | 压缩包条目为容器绝对路径，普通文件为 null                      |
-| entryPath     | string \| null                 | y    | 压缩包内的条目路径（`/` 分隔），普通文件为 null                |
+| entryPath     | string \| null                 | y    | 压缩包内的条目路径（工具返回的原样分隔符），普通文件为 null    |
 | archiveType   | 'zip' \| '7z' \| 'rar' \| null | y    | 压缩包条目的容器类型                                           |
 | size          | number                         | y    | 字节数（压缩包条目取包元信息中的未压缩大小）                   |
 | class         | string                         | y    | 扩展名（含 `.`），无扩展名为 `""`                              |
 | mtime         | number                         | y    | 毫秒时间戳；压缩包条目取包内元信息，取不到为 0                 |
-| crc32         | number \| null                 | n    | 比较阶梯中按需填充                                             |
+| crc32         | number \| null                 | n    | 压缩包条目自元信息免费获得；普通文件为 null（见 D1）           |
 | headmd5       | string \| null                 | n    | 文件前 1MB 的 md5，按需填充                                    |
 | fullmd5       | string \| null                 | n    | 全量 md5，按需填充                                             |
 
@@ -32,9 +32,9 @@
 
 ```
 L0 候选分组：按 key 分桶，key = ignoreName ? `${size}` : `${name}·${size}`
-L1 crc32 门控（仅压缩包条目参与，见 ⚠️ D1）
-L2 headMD5（前 1MB）：不同 → 判定为独立文件，终止
-L3 fullMD5：不同 → 独立文件；相同 → 重复
+L1 crc32 门控：仅当桶内全部为压缩包条目且 crc 齐备时启用，crc 互异的条目直接淘汰
+L2 headMD5（前 1MB）：不同 → 判定为独立文件，终止；压缩包条目需解压前 1MB
+L3 fullMD5：不同 → 独立文件；相同 → 重复；压缩包条目解压全量流式哈希
 ```
 
 规则细节：
@@ -61,14 +61,14 @@ L3 fullMD5：不同 → 独立文件；相同 → 重复
 | extWhitelist    | string[]                  | []                 | 非空时仅保留命中项                                                         |
 | scanArchives    | boolean                   | true               | 是否将 zip/7z/rar 内条目纳入比对                                           |
 | archiveTypes    | Array<'zip'\|'7z'\|'rar'> | ['zip','7z','rar'] | 首期固定三种                                                               |
-| useEverything   | boolean                   | true               | 检测到 Everything 时允许用其接口加速枚举（仅影响枚举速度，不改变比对逻辑） |
+| （枚举通道）    | —                          | 自动               | 检测到 es.exe + 运行中的 Everything 即走其索引枚举，逐目标自动回退 fs walk；不作为用户设置项 |
 
 ## 4. 扫描会话与进度
 
 ```ts
 interface ScanProgress {
   sessionId: string
-  phase: 'listing' | 'hashing' | 'archive' | 'finalizing'
+  phase: 'listing' | 'hashing' | 'finalizing'
   filesFound: number // 已发现的候选条目数
   filesProcessed: number // 已完成比对（含免哈希）的条目数
   bytesHashed: number // 已读取并哈希的字节数
@@ -83,6 +83,8 @@ interface ScanSummary {
   dupeGroups: number
   wastedBytes: number
   durationMs: number
+  errors: number // 读取/解压失败等非致命错误条数
+  tree: ScanTreeNode[] // 目录体积树（多目标为森林），供空间分析使用
 }
 ```
 
@@ -105,24 +107,19 @@ interface DupeGroup {
 type CleanActionType = 'delete' | 'hardlink' | 'mergeMove'
 
 interface CleanAction {
-  type: CleanActionType
-  // 每个 DupeGroup 中保留条目的 path；其余成员为处理对象
-  keepPaths: string[]
-  removePaths: string[]
-  options?: {
-    mergeTargetDir?: string // mergeMove 的目标目录
-  }
+  keepPaths: string[] // 当前实现仅 delete：每组保留项
+  removePaths: string[] // 待删除副本（压缩包内条目不进入此清单）
 }
 
 interface CleanReport {
   ok: number
   failed: Array<{ path: string; reason: string }>
   freedBytes: number
-  logPath: string | null // mergeMove 生成的恢复 log 路径
 }
+// hardlink / mergeMove 为后续迭代，届时扩展 CleanAction
 ```
 
-- delete：删除所选副本（可配置进回收站或直接删除，⚠️ D3 默认建议回收站）。
+- delete：删除所选副本，进回收站（`shell.trashItem`，D3 已采纳）。压缩包内条目不参与清理。
 - hardlink：删除副本并对保留件创建硬链接（仅同卷可用，跨卷条目报告失败）。
 - mergeMove：把各组副本移动到目标目录、目标只保留一份，生成 `恢复 log`（JSON：原路径 → 归档路径）。
 

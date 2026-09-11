@@ -16,6 +16,10 @@
         ><input v-model="scan.draft.excludeJunction" type="checkbox" /> 排除 junction /
         链接目录（防循环）</label
       >
+      <label class="check-row"
+        ><input v-model="scan.draft.scanArchives" type="checkbox" /> 扫描压缩包内文件
+        （zip/7z/rar，仅查重，不改动压缩包）</label
+      >
 
       <div class="size-row">
         <label class="check-row"><input v-model="useMin" type="checkbox" /> 排除小于</label>

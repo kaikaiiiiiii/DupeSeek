@@ -23,6 +23,8 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "7zip-bin": "^5.2.0",
+    "node-unrar-js": "^2.0.2",
     "pinia": "^3.0.4",
     "virtua": "^0.51.3"
   },
