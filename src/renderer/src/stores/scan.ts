@@ -4,6 +4,7 @@ import { defaultScanDraft } from '../../../shared/defaults'
 import type { ScanProgress, ScanSettings, ScanSummary } from '../../../shared/types'
 import { useDupeStore } from './dupe'
 import { useTargetStore } from './target'
+import { deepPlain } from '../utils/plain'
 
 export type ScanStatus = 'idle' | 'scanning' | 'done' | 'error'
 
@@ -48,7 +49,7 @@ export const useScanStore = defineStore('scan', () => {
     error.value = ''
     status.value = 'scanning'
     try {
-      sessionId.value = await window.api.scanStart(draft.value)
+      sessionId.value = await window.api.scanStart(deepPlain(draft.value))
     } catch (err) {
       status.value = 'error'
       error.value = err instanceof Error ? err.message : String(err)

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { CleanReport, DupeGroup, FileEntry } from '../../../shared/types'
 import { baseName } from '../utils/format'
+import { deepPlain } from '../utils/plain'
 
 export interface DupeGroupView extends DupeGroup {
   /** 会话内唯一的组 ID，作为选择状态键 */
@@ -100,7 +101,7 @@ export const useDupeStore = defineStore('dupe', () => {
         if (e.path !== keep) removePaths.push(e.path)
       }
     }
-    const report = await window.api.cleanRun({ keepPaths, removePaths })
+    const report = await window.api.cleanRun(deepPlain({ keepPaths, removePaths }))
     lastReport.value = report
     // 从列表中移除已清理的条目（失败的保留），少于 2 个成员的组解散
     const failed = new Set(report.failed.map((f) => f.path))
