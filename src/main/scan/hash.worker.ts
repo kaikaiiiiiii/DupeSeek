@@ -16,6 +16,10 @@ interface HashJob {
   entryPath?: string
 }
 
+for (const stream of [process.stdout, process.stderr]) {
+  stream?.on?.('error', (): void => undefined)
+}
+
 /** 单 worker 一次只处理一个任务，由 HashPool 调度；失败以 null 结算 */
 parentPort?.on('message', (job: HashJob) => {
   void (async () => {
