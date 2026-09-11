@@ -8,7 +8,8 @@
 * 前端使用 virtual list 技术来高效地展示大量文件信息，确保界面流畅。
 * 前端使用 pinia 进行状态管理，确保应用状态的一致性和可维护性。
 * 前端的 layout 组件和 UI 功能组件分离，确保代码的模块化和可复用性。
-* 后端使用多线程或异步处理来加速文件扫描和哈希计算，避免界面卡顿。当前实现：枚举在主进程异步执行，md5（headMD5/fullMD5）计算运行在 worker_threads 线程池（`HashPool`，worker 数 `min(8, CPU核数-1)`，崩溃自动重建），设置持久化当前为 JSON 文件。
+* 后端使用多线程或异步处理来加速文件扫描和哈希计算，避免界面卡顿。当前实现：md5（headMD5/fullMD5）计算运行在 worker_threads 线程池（`HashPool`，worker 数 `min(8, CPU核数-1)`，崩溃自动重建），设置持久化当前为 JSON 文件。
+* 文件枚举优先走 Everything：检测 `resources/bin/es.exe`（随应用分发）并确认 Everything IPC 可达，用 `-path <目标> -export-json` 获取文件与目录清单；未安装、未运行、目标未收录（如非 NTFS 卷）或查询失败时，**逐目标**回退 fs.walk。junction/符号链接在 Everything 通道经 `-a-L` 属性排除。
 * 后端使用 sqlite 数据库来存储扫描结果和用户设置，确保数据的持久化和下次的快速访问。
 
 ## UI

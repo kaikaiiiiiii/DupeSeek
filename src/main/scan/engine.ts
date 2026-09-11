@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import fs from 'fs'
 import path from 'path'
 import type {
   DupeGroup,
@@ -8,8 +9,9 @@ import type {
   ScanSummary,
   ScanTreeNode
 } from '../../shared/types'
+import { createEverythingLister, type EverythingLister } from './everything'
 import { getHashPool, HASH_WORKERS } from './hashPool'
-import { walkTargets } from './walk'
+import { extAllowed, extOf, settingsExcludesDir, walkTargets } from './walk'
 
 const HEAD_BYTES = 1024 * 1024
 const GROUP_FLUSH_COUNT = 50
@@ -110,7 +112,7 @@ export class ScanEngine {
     }
   }
 
-  private listPhase(settings: ScanSettings): Promise<FileEntry[]> {
+  private async listPhase(settings: ScanSettings): Promise<FileEntry[]> {
     this.phase = 'listing'
     const entries: FileEntry[] = []
     const lastPath = { value: '' }
@@ -130,13 +132,85 @@ export class ScanEngine {
         this.errors++
       }
     }
+
+    // 优先 Everything 枚举；未安装 / 未运行 / 单目标失败时逐目标回退 fs walk
+    const lister = await createEverythingLister()
+    console.info(`[scan] 枚举通道：${lister ? 'Everything (es.exe)' : 'fs walk'}`)
+
     const tick = setInterval(() => {
       this.found = entries.length
       this.emitProgress(lastPath.value)
     }, PROGRESS_MS)
-    return walkTargets(settings.targets, ctx)
-      .finally(() => clearInterval(tick))
-      .then(() => entries)
+    try {
+      for (const target of settings.targets) {
+        if (this.canceled) break
+        let handled = false
+        if (lister) {
+          try {
+            handled = await this.listViaEverything(lister, target, settings, entries, lastPath)
+          } catch (err) {
+            console.warn(`[scan] Everything 枚举失败，回退 walk：${target}`, err)
+          }
+        }
+        if (!handled) await walkTargets([target], ctx)
+      }
+    } finally {
+      clearInterval(tick)
+    }
+    return entries
+  }
+
+  /** 用 Everything 枚举一个目录目标；返回 false 表示走不了该通道（如目标是文件） */
+  private async listViaEverything(
+    lister: EverythingLister,
+    target: string,
+    settings: ScanSettings,
+    entries: FileEntry[],
+    lastPath: { value: string }
+  ): Promise<boolean> {
+    const st = await fs.promises.lstat(target)
+    if (!st.isDirectory()) return false
+
+    const res = await lister.list(target)
+    this.recordDir(target)
+
+    // 目录级排除：被排除目录的整棵子树都要剔除（Everything 返回顺序不定，先收集前缀再统一过滤）
+    const excluded: string[] = []
+    const dirOk: string[] = []
+    for (const dir of res.dirs) {
+      if (settingsExcludesDir(path.basename(dir), settings)) excluded.push(dir)
+      else dirOk.push(dir)
+    }
+    const isExcluded = (p: string): boolean => {
+      const lower = p.toLowerCase()
+      return excluded.some((d) => lower.startsWith(`${d.toLowerCase()}\\`))
+    }
+    for (const dir of dirOk) {
+      if (!isExcluded(dir)) this.recordDir(dir)
+    }
+
+    for (const f of res.files) {
+      if (isExcluded(f.filename)) continue
+      const name = path.basename(f.filename)
+      if (settings.excludeHidden && name.startsWith('.')) continue
+      const cls = extOf(name)
+      if (!extAllowed(cls, settings)) continue
+      if (settings.minSize !== null && f.size < settings.minSize) continue
+      if (settings.maxSize !== null && f.size > settings.maxSize) continue
+      const entry: FileEntry = {
+        path: f.filename,
+        name,
+        size: f.size,
+        class: cls,
+        mtime: f.mtimeMs,
+        headmd5: null,
+        fullmd5: null
+      }
+      entries.push(entry)
+      this.addBytes(f.filename, f.size, false)
+      lastPath.value = f.filename
+    }
+    return true
   }
 
   private emitProgress(currentPath: string): void {
