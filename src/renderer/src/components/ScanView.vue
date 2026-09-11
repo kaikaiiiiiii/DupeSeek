@@ -77,6 +77,7 @@
           <span
             >{{ phaseLabel(scan.progress.phase) }} · {{ scan.progress.percent.toFixed(0) }}%</span
           >
+          <span class="elapsed" title="本次扫描已用时">⏱ {{ elapsedLabel }}</span>
           <span
             >{{ scan.progress.filesFound }} 个候选 · 已哈希
             {{ formatBytes(scan.progress.bytesHashed) }}</span
@@ -100,14 +101,36 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ScanPhase } from '../../../shared/types'
 import { useScanStore } from '../stores/scan'
 import { useTargetStore } from '../stores/target'
-import { formatBytes } from '../utils/format'
+import { formatBytes, formatDuration } from '../utils/format'
 
 const scan = useScanStore()
 const targets = computed(() => useTargetStore().targets)
+
+// 扫描计时：基于起始时间戳计算，切 Tab（KeepAlive）期间照常走表
+const elapsedMs = ref(0)
+const elapsedLabel = computed(() => formatDuration(elapsedMs.value))
+let startedAt = 0
+let timer: ReturnType<typeof setInterval> | undefined
+
+watch(
+  () => scan.status,
+  (status) => {
+    clearInterval(timer)
+    if (status === 'scanning') {
+      startedAt = Date.now()
+      elapsedMs.value = 0
+      timer = setInterval(() => {
+        elapsedMs.value = Date.now() - startedAt
+      }, 500)
+    }
+  }
+)
+
+onBeforeUnmount(() => clearInterval(timer))
 
 type SizeUnit = 'KB' | 'MB' | 'GB'
 const UNIT_BYTES: Record<SizeUnit, number> = { KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3 }
@@ -246,6 +269,11 @@ async function startScan(): Promise<void> {
   justify-content: space-between;
   margin-top: 4px;
   color: var(--muted);
+}
+
+.elapsed {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .current-path {

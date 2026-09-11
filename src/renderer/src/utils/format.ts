@@ -11,6 +11,16 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 100 ? 0 : 1)} ${unit}`
 }
 
+/** 时长格式化：<1小时 为 m:ss，否则 h:mm:ss */
+export function formatDuration(ms: number): string {
+  const total = Math.floor(ms / 1000)
+  const s = total % 60
+  const m = Math.floor(total / 60) % 60
+  const h = Math.floor(total / 3600)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
+}
+
 export function formatTime(ms: number): string {
   if (!ms) return '—'
   const d = new Date(ms)
