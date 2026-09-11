@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { CleanAction, DupeSeekApi, ScanSettings } from '../shared/types'
+import type { DupeSeekApi } from '../shared/types'
 
 function subscribe<T>(channel: string): (cb: (payload: T) => void) => () => void {
   return (cb) => {
@@ -12,17 +12,22 @@ function subscribe<T>(channel: string): (cb: (payload: T) => void) => () => void
   }
 }
 
+/** contextBridge 无法序列化 Vue 的响应式 Proxy；IPC 契约是纯 JSON，入口统一拍平 */
+function plainJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 const api: DupeSeekApi = {
   selectTargets: (kind) => ipcRenderer.invoke('dialog:select-targets', kind),
   listDir: (path) => ipcRenderer.invoke('fs:list', path),
   places: () => ipcRenderer.invoke('fs:places'),
   reveal: (path) => ipcRenderer.invoke('fs:reveal', path),
   pathForFile: (file) => webUtils.getPathForFile(file),
-  scanStart: (settings: ScanSettings) => ipcRenderer.invoke('scan:start', settings),
+  scanStart: (settings) => ipcRenderer.invoke('scan:start', plainJson(settings)),
   scanStop: (sessionId) => ipcRenderer.send('scan:stop', sessionId),
-  cleanRun: (action: CleanAction) => ipcRenderer.invoke('clean:run', action),
+  cleanRun: (action) => ipcRenderer.invoke('clean:run', plainJson(action)),
   getSettings: () => ipcRenderer.invoke('app:get-settings'),
-  setSettings: (patch) => ipcRenderer.invoke('app:set-settings', patch),
+  setSettings: (patch) => ipcRenderer.invoke('app:set-settings', plainJson(patch)),
 
   onScanProgress: subscribe('scan:progress'),
   onScanGroup: subscribe('scan:group'),
