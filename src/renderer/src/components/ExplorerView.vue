@@ -15,6 +15,16 @@
           <span v-if="i < crumbs.length - 1" class="sep">›</span>
         </template>
       </nav>
+      <button
+        class="btn small"
+        :class="{ primary: activeCount > 0 }"
+        :disabled="activeCount === 0"
+        title="把所有选中的项加入左侧扫描目标"
+        @click="addActive"
+      >
+        添加到扫描{{ activeCount > 0 ? `（${activeCount}）` : '' }}
+      </button>
+      <span v-if="addedMsg" class="added-msg">{{ addedMsg }}</span>
       <button class="btn small" :disabled="!explorer.cwd" @click="explorer.addFavorite()">
         ★ 收藏
       </button>
@@ -51,7 +61,13 @@
         :item-size="30"
       >
         <template #default="{ item }">
-          <div class="dir-row" @click="openEntry(item as DirEntry)">
+          <div
+            class="dir-row"
+            :class="{ active: selected.has((item as DirEntry).path) }"
+            :title="(item as DirEntry).isDir ? '单击选中 / 取消，双击进入' : '单击选中 / 取消'"
+            @click="toggleActive(item as DirEntry)"
+            @dblclick="openEntry(item as DirEntry)"
+          >
             <span class="entry-icon">{{ (item as DirEntry).isDir ? '📁' : '📄' }}</span>
             <span class="entry-name" :title="(item as DirEntry).path">{{
               (item as DirEntry).name
@@ -65,7 +81,13 @@
         </template>
       </VirtualScrollList>
       <div v-else class="empty">
-        {{ explorer.loading ? '加载中…' : explorer.cwd ? '空目录' : '选择一个目录开始浏览' }}
+        {{
+          explorer.loading
+            ? '加载中…'
+            : explorer.cwd
+              ? '空目录'
+              : '选择一个目录开始浏览；单击选中，双击进入目录'
+        }}
       </div>
     </div>
 
@@ -82,14 +104,48 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { DirEntry } from '../../../shared/types'
 import { useExplorerStore } from '../stores/explorer'
+import { useTargetStore } from '../stores/target'
 import { formatBytes, formatTime } from '../utils/format'
 import VirtualScrollList from './VirtualScrollList.vue'
 
 const explorer = useExplorerStore()
+const targetStore = useTargetStore()
 const pathInput = ref('')
+
+/** 选中（active）的条目路径；以 path 为键，虚拟滚动复用行不影响状态 */
+const selected = ref<Set<string>>(new Set())
+const addedMsg = ref('')
+let addedTimer: ReturnType<typeof setTimeout> | undefined
+
+const activeCount = computed(() => selected.value.size)
+
+// 换目录后旧选中项不可见，保留会造成"隐形添加"，故清空
+watch(
+  () => explorer.cwd,
+  () => {
+    selected.value = new Set()
+  }
+)
+
+function toggleActive(entry: DirEntry): void {
+  const next = new Set(selected.value)
+  if (next.has(entry.path)) next.delete(entry.path)
+  else next.add(entry.path)
+  selected.value = next
+}
+
+async function addActive(): Promise<void> {
+  const paths = [...selected.value]
+  if (paths.length === 0) return
+  const added = await targetStore.add(paths)
+  selected.value = new Set()
+  addedMsg.value = added > 0 ? `已添加 ${added} 项` : '均已在目标列表中'
+  clearTimeout(addedTimer)
+  addedTimer = setTimeout(() => (addedMsg.value = ''), 2000)
+}
 
 const canBack = computed(() => explorer.cursor > 0 && !explorer.loading)
 const canForward = computed(
@@ -248,6 +304,16 @@ function openEntry(entry: DirEntry): void {
 
 .dir-row:hover {
   background: var(--hover-bg);
+}
+
+.dir-row.active {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.added-msg {
+  color: var(--accent);
+  white-space: nowrap;
 }
 
 .entry-name {

@@ -53,9 +53,25 @@ async function collectFile(fullPath: string, name: string, ctx: WalkContext): Pr
   }
 }
 
-/** 迭代式递归遍历所有目标目录，产出符合条件的文件条目 */
+/** 迭代式递归遍历所有目标，产出符合条件的文件条目；目标可以是目录或单个文件 */
 export async function walkTargets(roots: string[], ctx: WalkContext): Promise<void> {
-  const stack = [...roots]
+  const stack: string[] = []
+  for (const root of roots) {
+    if (ctx.canceled()) return
+    try {
+      const st = await fs.promises.lstat(root)
+      if (st.isFile()) {
+        await collectFile(root, path.basename(root), ctx)
+      } else if (st.isDirectory()) {
+        stack.push(root)
+      } else {
+        ctx.onError(root, new Error('不支持的目标类型'))
+      }
+    } catch (err) {
+      ctx.onError(root, err)
+    }
+  }
+
   const visited = new Set<string>()
 
   while (stack.length > 0) {
