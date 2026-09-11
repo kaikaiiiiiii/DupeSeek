@@ -28,10 +28,10 @@ parentPort?.on('message', (job: HashJob) => {
     try {
       switch (job.kind) {
         case 'md5-head':
-          value = await md5HeadFile(job.path as string, job.cap ?? 1024 * 1024)
+          value = md5HeadFile(job.path as string, job.cap ?? 1024 * 1024)
           break
         case 'md5-full':
-          value = await md5FullFile(job.path as string)
+          value = md5FullFile(job.path as string)
           break
         case 'archive-list':
           value = await listArchive(job.archivePath as string, job.archiveType as ArchiveType)

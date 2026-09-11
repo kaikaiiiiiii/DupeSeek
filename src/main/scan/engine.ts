@@ -510,6 +510,14 @@ export class ScanEngine {
    */
   private async partition(entries: FileEntry[], slot: HashSlot): Promise<FileEntry[][]> {
     const pool = getHashPool()
+    // 小文件优化：size ≤ 1MB 时 headMD5 读的已是整个文件，直接复用为 fullMD5，免二次读盘
+    if (slot === 'fullmd5') {
+      for (const e of entries) {
+        if (e.fullmd5 === null && e.headmd5 !== null && e.size <= HEAD_BYTES) {
+          e.fullmd5 = e.headmd5
+        }
+      }
+    }
     const pending = entries.filter((e) => e[slot] === null)
     const hashes = await pMap(pending, HASH_WORKERS, (e) => {
       if (e.containerPath !== null && e.entryPath !== null && e.archiveType !== null) {

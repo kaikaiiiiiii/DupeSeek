@@ -87,18 +87,23 @@
             {{ formatBytes(scan.progress.bytesHashed) }}</span
           >
         </div>
-        <div v-if="scan.progress.denied > 0" class="elevate-box">
-          <span class="elevate-text">
-            有 {{ scan.progress.denied }} 个文件或目录需要管理员权限才能读取，本次结果可能不完整。
-          </span>
-          <button class="btn small primary" :disabled="elevating" @click="elevate">
-            以管理员身份重启并重新扫描
-          </button>
-          <span v-if="elevateMsg" class="elevate-msg">{{ elevateMsg }}</span>
-        </div>
         <div class="current-path" :title="scan.progress.currentPath">
           {{ scan.progress.currentPath }}
         </div>
+      </div>
+
+      <!-- 提权提示：扫描中与扫描结束后都常驻，直到提权重启成功或新一轮扫描归零 -->
+      <div
+        v-if="deniedCount > 0 && (scan.status === 'scanning' || scan.status === 'done')"
+        class="elevate-box"
+      >
+        <span class="elevate-text">
+          有 {{ deniedCount }} 个文件或目录需要管理员权限才能读取，本次结果可能不完整。
+        </span>
+        <button class="btn small primary" :disabled="elevating" @click="elevate">
+          以管理员身份重启并重新扫描
+        </button>
+        <span v-if="elevateMsg" class="elevate-msg">{{ elevateMsg }}</span>
       </div>
 
       <div v-if="scan.status === 'done' && scan.summary" class="summary">
@@ -160,6 +165,13 @@ const whitelistText = ref('')
 
 const elevating = ref(false)
 const elevateMsg = ref('')
+
+/** 权限不足条数：扫描中取实时进度，结束后取摘要；>0 时提示框常驻 */
+const deniedCount = computed(() => {
+  if (scan.status === 'scanning') return scan.progress?.denied ?? 0
+  if (scan.status === 'done') return scan.summary?.denied ?? 0
+  return 0
+})
 
 /** 请求 UAC 提权：成功后主进程会保存续扫标记并退出，由管理员实例自动重扫 */
 async function elevate(): Promise<void> {
