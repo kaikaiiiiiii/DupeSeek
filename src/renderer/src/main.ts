@@ -1,14 +1,6 @@
-import './assets/main.css'
-
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import App from './Main.vue'
-import { RecycleScroller } from 'vue-virtual-scroller'
+import App from './App.vue'
+import './assets/main.css'
 
-const app = createApp(App)
-const pinia = createPinia()
-
-app.use(pinia)
-
-app.component('RecycleScroller', RecycleScroller)
-app.mount('#app')
+createApp(App).use(createPinia()).mount('#app')

@@ -1,6 +1,8 @@
 # DataModel.md — 共享数据结构与计算逻辑
 
-> v0.1 草案（2026-09-12）。类型统一定义在 `src/shared/` 下（主进程 / preload / 渲染层三端共享），UI 组件库选型与本文件无关。
+> v0.2（2026-09-12）。类型统一定义在 `src/shared/types.ts`（主进程 / preload / 渲染层三端共享）。
+>
+> **实现状态**：首个基础版已落地——普通文件的 L0（文件名+大小）→ headMD5（前 1MB）→ fullMD5 阶梯、空文件免哈希成组、增量回流、协作式取消；清理仅支持删除进回收站。压缩包条目（`containerPath`/`entryPath`/`archiveType`/crc32 门控）、EverythingStatus、ScanTreeNode 均为后续迭代预留，当前类型中已移除，届时随迭代恢复。
 >
 > 标注 ⚠️ 的是待拍板的决策点，请评审时重点看。
 

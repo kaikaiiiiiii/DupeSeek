@@ -1,0 +1,64 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { defaultScanDraft } from '../../../shared/defaults'
+import type { ScanProgress, ScanSettings, ScanSummary } from '../../../shared/types'
+import { useDupeStore } from './dupe'
+import { useTargetStore } from './target'
+
+export type ScanStatus = 'idle' | 'scanning' | 'done' | 'error'
+
+export const useScanStore = defineStore('scan', () => {
+  const draft = ref<ScanSettings>(defaultScanDraft())
+  const sessionId = ref('')
+  const status = ref<ScanStatus>('idle')
+  const progress = ref<ScanProgress | null>(null)
+  const summary = ref<ScanSummary | null>(null)
+  const error = ref('')
+
+  function initDraft(saved: ScanSettings): void {
+    draft.value = { ...defaultScanDraft(), ...saved }
+  }
+
+  // 事件订阅在 store 首次实例化时注册一次；过期 sessionId 的事件一律丢弃
+  window.api.onScanProgress((p) => {
+    if (p.sessionId === sessionId.value) progress.value = p
+  })
+  window.api.onScanGroup((p) => {
+    if (p.sessionId === sessionId.value) useDupeStore().appendGroups(p.groups)
+  })
+  window.api.onScanDone((s) => {
+    if (s.sessionId !== sessionId.value) return
+    summary.value = s
+    status.value = 'done'
+    useDupeStore().markScanDone()
+  })
+  window.api.onScanError((p) => {
+    if (p.sessionId !== sessionId.value) return
+    error.value = p.message
+    status.value = 'error'
+  })
+
+  async function start(): Promise<void> {
+    if (status.value === 'scanning') return
+    const targets = useTargetStore().targets
+    if (targets.length === 0) throw new Error('请先在左侧添加扫描目标')
+    draft.value = { ...draft.value, targets: [...targets] }
+    useDupeStore().reset()
+    summary.value = null
+    error.value = ''
+    status.value = 'scanning'
+    try {
+      sessionId.value = await window.api.scanStart(draft.value)
+    } catch (err) {
+      status.value = 'error'
+      error.value = err instanceof Error ? err.message : String(err)
+      throw err
+    }
+  }
+
+  function stop(): void {
+    if (sessionId.value) window.api.scanStop(sessionId.value)
+  }
+
+  return { draft, sessionId, status, progress, summary, error, initDraft, start, stop }
+})
