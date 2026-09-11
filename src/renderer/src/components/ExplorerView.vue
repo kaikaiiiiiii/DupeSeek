@@ -61,23 +61,12 @@
         :item-size="30"
       >
         <template #default="{ item }">
-          <div
-            class="dir-row"
-            :class="{ active: selected.has((item as DirEntry).path) }"
-            :title="(item as DirEntry).isDir ? '单击选中 / 取消，双击进入' : '单击选中 / 取消'"
-            @click="toggleActive(item as DirEntry)"
-            @dblclick="openEntry(item as DirEntry)"
-          >
-            <span class="entry-icon">{{ (item as DirEntry).isDir ? '📁' : '📄' }}</span>
-            <span class="entry-name" :title="(item as DirEntry).path">{{
-              (item as DirEntry).name
-            }}</span>
-            <span class="entry-mtime">{{ formatTime((item as DirEntry).mtime) }}</span>
-            <span class="entry-class">{{ (item as DirEntry).class || '—' }}</span>
-            <span class="entry-size">{{
-              (item as DirEntry).isDir ? '' : formatBytes((item as DirEntry).size)
-            }}</span>
-          </div>
+          <ExplorerRow
+            :entry="item as DirEntry"
+            :active="selected.has((item as DirEntry).path)"
+            @open="openEntry(item as DirEntry)"
+            @toggle="toggleActive(item as DirEntry)"
+          />
         </template>
       </VirtualScrollList>
       <div v-else class="empty">
@@ -86,7 +75,7 @@
             ? '加载中…'
             : explorer.cwd
               ? '空目录'
-              : '选择一个目录开始浏览；单击选中，双击进入目录'
+              : '选择一个目录开始浏览；点击名称进入，点击右侧属性选中'
         }}
       </div>
     </div>
@@ -108,7 +97,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import type { DirEntry } from '../../../shared/types'
 import { useExplorerStore } from '../stores/explorer'
 import { useTargetStore } from '../stores/target'
-import { formatBytes, formatTime } from '../utils/format'
+import ExplorerRow from './ExplorerRow.vue'
 import VirtualScrollList from './VirtualScrollList.vue'
 
 const explorer = useExplorerStore()
@@ -290,48 +279,9 @@ function openEntry(entry: DirEntry): void {
   min-height: 0;
 }
 
-.dir-row {
-  height: 30px;
-  display: grid;
-  grid-template-columns: 24px 1fr 140px 60px 80px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--border-light);
-  cursor: default;
-  box-sizing: border-box;
-}
-
-.dir-row:hover {
-  background: var(--hover-bg);
-}
-
-.dir-row.active {
-  background: var(--accent-soft);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
 .added-msg {
   color: var(--accent);
   white-space: nowrap;
-}
-
-.entry-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.entry-mtime,
-.entry-size {
-  color: var(--muted);
-  font-size: 12px;
-  text-align: right;
-}
-
-.entry-class {
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .path-bar {
