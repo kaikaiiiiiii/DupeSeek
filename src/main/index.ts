@@ -5,6 +5,27 @@ import icon from '../../resources/icon.png?asset'
 import { closeHashPool } from './scan/hashPool'
 import { registerIpc } from './ipc'
 
+// stdio 加固：启动本应用的终端/父进程退出后，stdout/stderr 写入会 EPIPE。
+// 挂 no-op error 监听并全局兜底，避免未捕获异常弹窗中断应用。
+for (const stream of [process.stdout, process.stderr]) {
+  stream?.on?.('error', (): void => undefined)
+}
+process.on('uncaughtException', (err): void => {
+  if ((err as NodeJS.ErrnoException)?.code === 'EPIPE') return
+  try {
+    console.error('[main] 未捕获异常', err)
+  } catch {
+    /* stdio 已断开 */
+  }
+})
+process.on('unhandledRejection', (reason): void => {
+  try {
+    console.error('[main] 未处理的 Promise 拒绝', reason)
+  } catch {
+    /* stdio 已断开 */
+  }
+})
+
 // 提权重启交接：新实例从命令行拿到旧实例 PID 与一次性续扫标记
 function argValue(flag: string): string | undefined {
   const hit = process.argv.find((a) => a.startsWith(`${flag}=`))
