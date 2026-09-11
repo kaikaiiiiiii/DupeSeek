@@ -30,6 +30,7 @@ import DupeList from './components/DupeList.vue'
 import ExplorerView from './components/ExplorerView.vue'
 import ScanView from './components/ScanView.vue'
 import TargetList from './components/TargetList.vue'
+import TreeSizeView from './components/TreeSizeView.vue'
 import { useDupeStore } from './stores/dupe'
 import { useScanStore } from './stores/scan'
 import { useSettingsStore } from './stores/settings'
@@ -38,7 +39,8 @@ import { useTargetStore } from './stores/target'
 const tabs = [
   { id: 'explorer', label: '浏览', component: ExplorerView },
   { id: 'scan', label: '扫描', component: ScanView },
-  { id: 'dupes', label: '清理', component: DupeList }
+  { id: 'dupes', label: '清理', component: DupeList },
+  { id: 'treesize', label: '空间分析', component: TreeSizeView }
 ] as const
 
 type TabId = (typeof tabs)[number]['id']

@@ -53,6 +53,18 @@ export interface ScanSummary {
   durationMs: number
   /** 读取失败等非致命错误条数 */
   errors: number
+  /** 目录体积树（多目标为森林），供空间分析视图使用 */
+  tree: ScanTreeNode[]
+}
+
+export interface ScanTreeNode {
+  name: string
+  path: string
+  /** 该目录（含子孙）聚合的文件字节数 */
+  size: number
+  /** 该目录（含子孙）中重复副本占用的字节数（按"每组保留最早修改"口径归集） */
+  dupWasted: number
+  children: ScanTreeNode[]
 }
 
 export interface DupeGroup {
