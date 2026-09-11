@@ -1,16 +1,24 @@
 // 三端（主进程 / preload / 渲染层）共享的类型定义，与 docs/DataModel.md 保持一致。
-// 首个基础版：仅普通文件比对；压缩包、Everything、TreeSize 为后续迭代。
+
+export type ArchiveType = 'zip' | '7z' | 'rar'
 
 export interface FileEntry {
-  /** 唯一 ID，即绝对路径 */
+  /** 唯一 ID：普通文件为绝对路径；压缩包条目为 `容器路径!/包内路径` */
   path: string
   name: string
-  /** 字节数 */
+  /** 字节数；压缩包条目为元信息中的未压缩大小 */
   size: number
   /** 扩展名（含 `.`），无扩展名为空字符串 */
   class: string
   /** 毫秒时间戳，取不到为 0 */
   mtime: number
+  /** 压缩包条目的容器绝对路径；普通文件为 null */
+  containerPath: string | null
+  /** 压缩包内的条目路径（工具返回的原样分隔符）；普通文件为 null */
+  entryPath: string | null
+  archiveType: ArchiveType | null
+  /** 压缩包条目自元信息免费获得的 crc32；普通文件为 null */
+  crc32: number | null
   /** 文件前 1MB 的 md5，按需填充 */
   headmd5: string | null
   /** 全量 md5，按需填充 */
@@ -30,6 +38,9 @@ export interface ScanSettings {
   /** 扩展名（不含点），先黑后白 */
   extBlacklist: string[]
   extWhitelist: string[]
+  /** 是否把 zip/7z/rar 内的条目纳入比对（压缩包文件本身始终参与） */
+  scanArchives: boolean
+  archiveTypes: ArchiveType[]
 }
 
 export type ScanPhase = 'listing' | 'hashing' | 'finalizing'

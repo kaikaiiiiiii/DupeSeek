@@ -59,7 +59,10 @@ export const useDupeStore = defineStore('dupe', () => {
   function defaultKeep(group: DupeGroupView): string {
     const candidates = group.entries
     if (candidates.length === 0) return ''
-    return candidates.reduce((best, e) => (e.mtime < best.mtime ? e : best), candidates[0]).path
+    // 压缩包内条目无法被清理动作删除，保留项优先选普通文件
+    const normal = candidates.filter((e) => e.containerPath === null)
+    const pool = normal.length > 0 ? normal : candidates
+    return pool.reduce((best, e) => (e.mtime < best.mtime ? e : best), pool[0]).path
   }
 
   function setKeep(groupId: number, path: string): void {
@@ -69,19 +72,21 @@ export const useDupeStore = defineStore('dupe', () => {
   function applyKeepRule(rule: KeepRule): void {
     const next: Record<number, string> = {}
     for (const g of visibleGroups.value) {
+      const pool = g.entries.filter((e) => e.containerPath === null)
+      if (pool.length === 0) continue
       let pick: FileEntry | undefined
       switch (rule) {
         case 'first':
-          pick = g.entries[0]
+          pick = pool[0]
           break
         case 'oldest':
-          pick = g.entries.reduce((a, b) => (a.mtime <= b.mtime ? a : b))
+          pick = pool.reduce((a, b) => (a.mtime <= b.mtime ? a : b))
           break
         case 'newest':
-          pick = g.entries.reduce((a, b) => (a.mtime >= b.mtime ? a : b))
+          pick = pool.reduce((a, b) => (a.mtime >= b.mtime ? a : b))
           break
         case 'shortestPath':
-          pick = g.entries.reduce((a, b) => (a.path.length <= b.path.length ? a : b))
+          pick = pool.reduce((a, b) => (a.path.length <= b.path.length ? a : b))
           break
       }
       if (pick) next[g.id] = pick.path
@@ -89,7 +94,8 @@ export const useDupeStore = defineStore('dupe', () => {
     keepChoice.value = next
   }
 
-  /** 组装清理动作并执行；确认弹窗由组件层负责 */
+  /** 组装清理动作并执行；确认弹窗由组件层负责。
+   *  压缩包内条目只参与查重：既不能作为保留件被移动，也绝不进入删除清单。 */
   async function runClean(): Promise<CleanReport> {
     const keepPaths: string[] = []
     const removePaths: string[] = []
@@ -98,7 +104,7 @@ export const useDupeStore = defineStore('dupe', () => {
       if (!keep || !g.entries.some((e) => e.path === keep)) continue
       keepPaths.push(keep)
       for (const e of g.entries) {
-        if (e.path !== keep) removePaths.push(e.path)
+        if (e.path !== keep && e.containerPath === null) removePaths.push(e.path)
       }
     }
     const report = await window.api.cleanRun(deepPlain({ keepPaths, removePaths }))

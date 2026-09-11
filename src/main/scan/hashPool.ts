@@ -1,19 +1,25 @@
 import os from 'os'
 import { Worker } from 'worker_threads'
 import CreateHashWorker from './hash.worker?nodeWorker'
+import type { ArchiveEntryMeta } from './archives'
 
 /** 默认 worker 数：留出主进程与 I/O 余量 */
 export const HASH_WORKERS = Math.max(2, Math.min(8, os.availableParallelism() - 1))
 
+export type HashJobKind = 'md5-head' | 'md5-full' | 'archive-list' | 'archive-head' | 'archive-full'
+
 interface HashJob {
-  kind: 'head' | 'full'
-  path: string
+  kind: HashJobKind
+  path?: string
   cap?: number
+  archiveType?: 'zip' | '7z' | 'rar'
+  archivePath?: string
+  entryPath?: string
 }
 
 interface QueueItem {
   job: HashJob
-  resolve: (md5: string | null) => void
+  resolve: (value: unknown) => void
 }
 
 /**
@@ -25,7 +31,7 @@ export class HashPool {
   private workers: Worker[] = []
   private idle: Worker[] = []
   private busy = new Set<Worker>()
-  private pending = new Map<Worker, Map<number, (md5: string | null) => void>>()
+  private pending = new Map<Worker, Map<number, (value: unknown) => void>>()
   private queue: QueueItem[] = []
   private nextId = 1
 
@@ -34,11 +40,37 @@ export class HashPool {
   }
 
   md5Head(path: string, cap: number): Promise<string | null> {
-    return this.run({ kind: 'head', path, cap })
+    return this.run({ kind: 'md5-head', path, cap }) as Promise<string | null>
   }
 
   md5Full(path: string): Promise<string | null> {
-    return this.run({ kind: 'full', path })
+    return this.run({ kind: 'md5-full', path }) as Promise<string | null>
+  }
+
+  /** 读取压缩包元信息条目列表；失败返回 null */
+  archiveList(
+    archiveType: 'zip' | '7z' | 'rar',
+    archivePath: string
+  ): Promise<ArchiveEntryMeta[] | null> {
+    return this.run({ kind: 'archive-list', archiveType, archivePath }) as Promise<
+      ArchiveEntryMeta[] | null
+    >
+  }
+
+  /** 解压条目并哈希（cap 限制读取字节数）；失败返回 null */
+  archiveMd5(
+    archiveType: 'zip' | '7z' | 'rar',
+    archivePath: string,
+    entryPath: string,
+    cap?: number
+  ): Promise<string | null> {
+    return this.run({
+      kind: cap === undefined ? 'archive-full' : 'archive-head',
+      archiveType,
+      archivePath,
+      entryPath,
+      cap
+    }) as Promise<string | null>
   }
 
   close(): void {
@@ -54,7 +86,7 @@ export class HashPool {
     this.busy.clear()
   }
 
-  private run(job: HashJob): Promise<string | null> {
+  private run(job: HashJob): Promise<unknown> {
     if (this.closed) return Promise.resolve(null)
     return new Promise((resolve) => {
       this.queue.push({ job, resolve })
@@ -65,12 +97,12 @@ export class HashPool {
   private spawn(): void {
     const w = CreateHashWorker({})
     this.pending.set(w, new Map())
-    w.on('message', (msg: { id: number; md5: string | null }) => {
+    w.on('message', (msg: { id: number; value: unknown }) => {
       const pend = this.pending.get(w)
       const resolve = pend?.get(msg.id)
       if (pend && resolve) {
         pend.delete(msg.id)
-        resolve(msg.md5)
+        resolve(msg.value)
       }
       this.busy.delete(w)
       this.idle.push(w)

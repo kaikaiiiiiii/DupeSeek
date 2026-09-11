@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import type {
+  ArchiveType,
   DupeGroup,
   FileEntry,
   ScanProgress,
@@ -11,14 +12,58 @@ import type {
 } from '../../shared/types'
 import { createEverythingLister, type EverythingLister } from './everything'
 import { getHashPool, HASH_WORKERS } from './hashPool'
+import type { ArchiveEntryMeta } from './archives'
 import { extAllowed, extOf, settingsExcludesDir, walkTargets } from './walk'
 
 const HEAD_BYTES = 1024 * 1024
 const GROUP_FLUSH_COUNT = 50
 const GROUP_FLUSH_MS = 500
 const PROGRESS_MS = 100
+const ARCHIVE_LIST_CONCURRENCY = 4
 
 type Broadcaster = (channel: string, payload: unknown) => void
+
+function archiveTypeOf(cls: string): ArchiveType | null {
+  switch (cls.toLowerCase()) {
+    case '.zip':
+      return 'zip'
+    case '.7z':
+      return '7z'
+    case '.rar':
+      return 'rar'
+    default:
+      return null
+  }
+}
+
+/** 由压缩包元信息构建条目；命中过滤规则的返回 null */
+function buildArchiveEntry(
+  container: FileEntry,
+  type: ArchiveType,
+  meta: ArchiveEntryMeta,
+  settings: ScanSettings
+): FileEntry | null {
+  const name = meta.entryPath.split(/[\\/]/).pop() ?? ''
+  if (name === '') return null
+  if (settings.excludeHidden && name.startsWith('.')) return null
+  const cls = extOf(name)
+  if (!extAllowed(cls, settings)) return null
+  if (settings.minSize !== null && meta.size < settings.minSize) return null
+  if (settings.maxSize !== null && meta.size > settings.maxSize) return null
+  return {
+    path: `${container.path}!/${meta.entryPath}`,
+    name,
+    size: meta.size,
+    class: cls,
+    mtime: meta.mtimeMs,
+    containerPath: container.path,
+    entryPath: meta.entryPath,
+    archiveType: type,
+    crc32: meta.crc32,
+    headmd5: null,
+    fullmd5: null
+  }
+}
 
 /** 目录聚合记录：枚举时登记，体积/重复沿祖先链累加 */
 interface DirAgg {
@@ -154,10 +199,41 @@ export class ScanEngine {
         }
         if (!handled) await walkTargets([target], ctx)
       }
+      await this.listArchiveEntries(settings, entries, lastPath)
     } finally {
       clearInterval(tick)
     }
     return entries
+  }
+
+  /** 枚举扫描到的压缩包内条目；容器本身也是普通候选，条目按 `容器!/包内路径` 建条 */
+  private async listArchiveEntries(
+    settings: ScanSettings,
+    entries: FileEntry[],
+    lastPath: { value: string }
+  ): Promise<void> {
+    if (!settings.scanArchives) return
+    const pool = getHashPool()
+    const containers = entries.filter(
+      (e) => e.containerPath === null && archiveTypeOf(e.class) !== null
+    )
+    await pMap(containers, ARCHIVE_LIST_CONCURRENCY, async (c) => {
+      if (this.canceled) return
+      const type = archiveTypeOf(c.class) as ArchiveType
+      try {
+        const metas = (await pool.archiveList(type, c.path)) as ArchiveEntryMeta[] | null
+        if (metas === null) throw new Error('元信息读取失败')
+        for (const m of metas) {
+          const entry = buildArchiveEntry(c, type, m, settings)
+          if (entry) {
+            entries.push(entry)
+            lastPath.value = entry.path
+          }
+        }
+      } catch {
+        this.errors++
+      }
+    })
   }
 
   /** 用 Everything 枚举一个目录目标；返回 false 表示走不了该通道（如目标是文件） */
@@ -203,6 +279,10 @@ export class ScanEngine {
         size: f.size,
         class: cls,
         mtime: f.mtimeMs,
+        containerPath: null,
+        entryPath: null,
+        archiveType: null,
+        crc32: null,
         headmd5: null,
         fullmd5: null
       }
@@ -254,11 +334,13 @@ export class ScanEngine {
     }
   }
 
-  /** 重复占用的归集口径：每组保留最早修改的一份，其余副本计入各自所在目录 */
+  /** 重复占用的归集口径：每组保留最早修改的一份，其余副本计入各自所在目录；
+   *  压缩包内副本无法独立删除，不参与归集 */
   private attributeDup(group: DupeGroup): void {
     const kept = group.entries.reduce((a, b) => (a.mtime <= b.mtime ? a : b))
     for (const e of group.entries) {
-      if (e.path !== kept.path) this.addBytes(e.path, e.size, true)
+      if (e.path === kept.path || e.containerPath !== null) continue
+      this.addBytes(e.path, e.size, true)
     }
   }
 
@@ -342,14 +424,31 @@ export class ScanEngine {
 
   /** 阶梯比较一个桶，返回其中的全部重复组（可能多于一个） */
   private async resolveBucket(bucket: FileEntry[]): Promise<DupeGroup[]> {
-    const headGroups = await this.partition(bucket, 'headmd5')
+    // 纯压缩包条目桶：先用元信息里免费获得的 crc32 初筛——crc 互异的条目对
+    // 不可能内容相同，直接淘汰；混有普通文件时 crc 无从比对，整体走完整阶梯
+    let sets: FileEntry[][] = [bucket]
+    const hasNormal = bucket.some((e) => e.containerPath === null)
+    const allCrcKnown = bucket.every((e) => e.crc32 !== null)
+    if (!hasNormal && allCrcKnown) {
+      const byCrc = new Map<number, FileEntry[]>()
+      for (const e of bucket) {
+        const arr = byCrc.get(e.crc32 as number)
+        if (arr) arr.push(e)
+        else byCrc.set(e.crc32 as number, [e])
+      }
+      sets = [...byCrc.values()].filter((g) => g.length >= 2)
+    }
+
     const result: DupeGroup[] = []
-    for (const headGroup of headGroups) {
+    for (const set of sets) {
       if (this.canceled) break
-      for (const fullGroup of await this.partition(headGroup, 'fullmd5')) {
-        const md5 = fullGroup[0].fullmd5
-        if (md5 === null) continue
-        result.push({ key: `md5:${md5}`, size: fullGroup[0].size, entries: fullGroup })
+      for (const headGroup of await this.partition(set, 'headmd5')) {
+        if (this.canceled) break
+        for (const fullGroup of await this.partition(headGroup, 'fullmd5')) {
+          const md5 = fullGroup[0].fullmd5
+          if (md5 === null) continue
+          result.push({ key: `md5:${md5}`, size: fullGroup[0].size, entries: fullGroup })
+        }
       }
     }
     return result
@@ -357,14 +456,23 @@ export class ScanEngine {
 
   /**
    * 按指定哈希槽位把条目分堆，成员数 ≥ 2 的堆才返回。
-   * 哈希计算提交给 worker 线程池；失败（null）的条目视为独立文件，不参与分组。
+   * 普通文件直接哈希；压缩包条目解压到内存后哈希，均提交给 worker 线程池；
+   * 失败（null）的条目视为独立文件，不参与分组。
    */
   private async partition(entries: FileEntry[], slot: HashSlot): Promise<FileEntry[][]> {
     const pool = getHashPool()
     const pending = entries.filter((e) => e[slot] === null)
-    const hashes = await pMap(pending, HASH_WORKERS, (e) =>
-      slot === 'headmd5' ? pool.md5Head(e.path, HEAD_BYTES) : pool.md5Full(e.path)
-    )
+    const hashes = await pMap(pending, HASH_WORKERS, (e) => {
+      if (e.containerPath !== null && e.entryPath !== null && e.archiveType !== null) {
+        return pool.archiveMd5(
+          e.archiveType,
+          e.containerPath,
+          e.entryPath,
+          slot === 'headmd5' ? HEAD_BYTES : undefined
+        )
+      }
+      return slot === 'headmd5' ? pool.md5Head(e.path, HEAD_BYTES) : pool.md5Full(e.path)
+    })
     for (let i = 0; i < pending.length; i++) {
       const h = hashes[i]
       const e = pending[i]
