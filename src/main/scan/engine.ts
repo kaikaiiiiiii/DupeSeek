@@ -10,6 +10,7 @@ import type {
   ScanSummary,
   ScanTreeNode
 } from '../../shared/types'
+import { isPermissionError } from '../../shared/errors'
 import { createEverythingLister, type EverythingLister } from './everything'
 import { getHashPool, HASH_WORKERS } from './hashPool'
 import type { ArchiveEntryMeta } from './archives'
@@ -106,6 +107,7 @@ export class ScanEngine {
   private lastProgressAt = 0
   private dirs = new Map<string, DirAgg>()
   private rootParents = new Set<string>()
+  private denied = 0
 
   constructor(broadcaster: Broadcaster) {
     this.broadcaster = broadcaster
@@ -129,6 +131,8 @@ export class ScanEngine {
     this.found = 0
     this.processed = 0
     this.bytesHashed = 0
+    this.denied = 0
+    getHashPool().resetDenied()
     this.dirs = new Map()
     // 体积归集的停点：目标目录的父目录（大小只归到目标根为止）
     this.rootParents = new Set(settings.targets.map((t) => path.dirname(t).toLowerCase()))
@@ -147,6 +151,7 @@ export class ScanEngine {
         wastedBytes: wasted,
         durationMs: Date.now() - startedAt,
         errors: this.errors,
+        denied: this.denied + getHashPool().deniedCount,
         tree: this.buildTree()
       }
       this.broadcaster('scan:done', summary)
@@ -173,8 +178,9 @@ export class ScanEngine {
         this.recordDir(p)
         lastPath.value = p
       },
-      onError: (): void => {
+      onError: (_p: string, err: unknown): void => {
         this.errors++
+        if (isPermissionError(err)) this.denied++
       }
     }
 
@@ -315,7 +321,8 @@ export class ScanEngine {
       filesProcessed: this.processed,
       bytesHashed: this.bytesHashed,
       currentPath,
-      percent: this.found > 0 ? Math.min(100, (this.processed / this.found) * 100) : 0
+      percent: this.found > 0 ? Math.min(100, (this.processed / this.found) * 100) : 0,
+      denied: this.denied + getHashPool().deniedCount
     }
     this.broadcaster('scan:progress', progress)
   }

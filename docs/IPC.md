@@ -25,6 +25,7 @@
 | `clean:run` | `CleanAction` | `CleanReport` | 执行删除/硬链接/合并移动；执行前由渲染层负责确认弹窗 |
 | `app:get-settings` | — | `AppSettings` | 全局设置（含上次的目标列表 ⚠️ D4） |
 | `app:set-settings` | `Partial<AppSettings>` | `AppSettings` | 合并保存；设置先落 JSON 文件，SQLite 后置 |
+| `app:elevate` | — | `boolean` | 请求 UAC 提权并以管理员重启：保存 `resumeScan` 标记 → `Start-Process -Verb RunAs` 拉起管理员实例 → 成功后旧实例退出；用户取消 UAC 返回 false。`AppSettings.resumeScan` 为一次性续扫标记，新实例消费后自动重扫 |
 
 ## 3. Main → Renderer（send 事件）
 

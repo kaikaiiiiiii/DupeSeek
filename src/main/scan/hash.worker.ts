@@ -1,5 +1,6 @@
 import { parentPort } from 'worker_threads'
 import { md5FullFile, md5HeadFile } from './hash'
+import { isPermissionError } from '../../shared/errors'
 import { hashArchiveEntry, listArchive } from './archives'
 import type { ArchiveType } from '../../shared/types'
 
@@ -19,6 +20,7 @@ interface HashJob {
 parentPort?.on('message', (job: HashJob) => {
   void (async () => {
     let value: unknown = null
+    let denied = false
     try {
       switch (job.kind) {
         case 'md5-head':
@@ -43,7 +45,8 @@ parentPort?.on('message', (job: HashJob) => {
     } catch (err) {
       console.error('[hash-worker] 任务失败', job.kind, err)
       value = null
+      denied = isPermissionError(err)
     }
-    parentPort?.postMessage({ id: job.id, value })
+    parentPort?.postMessage({ id: job.id, value, denied })
   })()
 })

@@ -53,6 +53,8 @@ export interface ScanProgress {
   bytesHashed: number
   currentPath: string
   percent: number
+  /** 累计遇到的权限不足（EACCES/EPERM）条数，>0 时 UI 提示可提权重扫 */
+  denied: number
 }
 
 export interface ScanSummary {
@@ -64,6 +66,8 @@ export interface ScanSummary {
   durationMs: number
   /** 读取失败等非致命错误条数 */
   errors: number
+  /** 其中权限不足的条数 */
+  denied: number
   /** 目录体积树（多目标为森林），供空间分析视图使用 */
   tree: ScanTreeNode[]
 }
@@ -117,6 +121,8 @@ export interface AppSettings {
   favorites: FavoriteItem[]
   /** 上次的扫描表单草稿 */
   scanDraft: ScanSettings
+  /** 提权重启后自动续扫的一次性标记 */
+  resumeScan?: boolean
 }
 
 /** 渲染层通过 preload 可用的 API，定义见 docs/IPC.md */
@@ -129,6 +135,8 @@ export interface DupeSeekApi {
   scanStart(settings: ScanSettings): Promise<string>
   scanStop(sessionId: string): void
   cleanRun(action: CleanAction): Promise<CleanReport>
+  /** 请求 UAC 提权并以管理员身份重启（保存现场后自动续扫）；返回是否成功拉起 */
+  elevate(): Promise<boolean>
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
 
