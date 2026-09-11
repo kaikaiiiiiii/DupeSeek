@@ -51,7 +51,7 @@ function buildArchiveEntry(
   if (settings.minSize !== null && meta.size < settings.minSize) return null
   if (settings.maxSize !== null && meta.size > settings.maxSize) return null
   return {
-    path: `${container.path}!/${meta.entryPath}`,
+    path: `${container.path}::${meta.entryPath}`,
     name,
     size: meta.size,
     class: cls,
@@ -206,7 +206,7 @@ export class ScanEngine {
     return entries
   }
 
-  /** 枚举扫描到的压缩包内条目；容器本身也是普通候选，条目按 `容器!/包内路径` 建条 */
+  /** 枚举扫描到的压缩包内条目；容器本身也是普通候选，条目按 `容器::包内路径` 建条 */
   private async listArchiveEntries(
     settings: ScanSettings,
     entries: FileEntry[],
@@ -224,7 +224,7 @@ export class ScanEngine {
         const metas = (await pool.archiveList(type, c.path)) as ArchiveEntryMeta[] | null
         if (metas === null) throw new Error('元信息读取失败')
         // 压缩包即特殊目录：合成根挂在容器所在的真实目录下，包内子目录逐级挂在其下
-        const root = c.path + '!'
+        const root = c.path + '::'
         this.recordDirAt(root, path.dirname(c.path), path.basename(c.path))
         for (const m of metas) {
           const segs = m.entryPath.split(/[\\/]/)
@@ -330,7 +330,7 @@ export class ScanEngine {
     })
   }
 
-  /** 显式指定父节点的登记（用于 `容器!/包内路径` 这类合成目录，dirname 不适用） */
+  /** 显式指定父节点的登记（用于 `容器::包内路径` 这类合成目录，dirname 不适用） */
   private recordDirAt(p: string, parent: string, name: string): void {
     if (this.dirs.has(p)) return
     this.dirs.set(p, { parent, name, size: 0, dup: 0 })
@@ -343,7 +343,7 @@ export class ScanEngine {
     bytes: number,
     dup: boolean
   ): void {
-    const root = containerPath + '!'
+    const root = containerPath + '::'
     const segs = entryPath.split(/[\\/]/)
     let p = root
     for (let i = 0; i < segs.length - 1; i++) p = p + '/' + segs[i]
