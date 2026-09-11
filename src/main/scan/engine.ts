@@ -8,11 +8,10 @@ import type {
   ScanSummary,
   ScanTreeNode
 } from '../../shared/types'
-import { md5FullFile, md5HeadFile } from './hash'
+import { getHashPool, HASH_WORKERS } from './hashPool'
 import { walkTargets } from './walk'
 
 const HEAD_BYTES = 1024 * 1024
-const HASH_CONCURRENCY = 4
 const GROUP_FLUSH_COUNT = 50
 const GROUP_FLUSH_MS = 500
 const PROGRESS_MS = 100
@@ -284,12 +283,13 @@ export class ScanEngine {
 
   /**
    * 按指定哈希槽位把条目分堆，成员数 ≥ 2 的堆才返回。
-   * 计算失败（null）的条目视为独立文件，不参与分组。
+   * 哈希计算提交给 worker 线程池；失败（null）的条目视为独立文件，不参与分组。
    */
   private async partition(entries: FileEntry[], slot: HashSlot): Promise<FileEntry[][]> {
+    const pool = getHashPool()
     const pending = entries.filter((e) => e[slot] === null)
-    const hashes = await pMap(pending, HASH_CONCURRENCY, (e) =>
-      slot === 'headmd5' ? md5HeadFile(e.path, HEAD_BYTES) : md5FullFile(e.path)
+    const hashes = await pMap(pending, HASH_WORKERS, (e) =>
+      slot === 'headmd5' ? pool.md5Head(e.path, HEAD_BYTES) : pool.md5Full(e.path)
     )
     for (let i = 0; i < pending.length; i++) {
       const h = hashes[i]
