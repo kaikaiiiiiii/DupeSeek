@@ -20,21 +20,33 @@ export const useScanStore = defineStore('scan', () => {
     draft.value = { ...defaultScanDraft(), ...saved }
   }
 
-  // 事件订阅在 store 首次实例化时注册一次；过期 sessionId 的事件一律丢弃
+  // 事件订阅在 store 首次实例化时注册一次。
+  // sessionId 由主进程生成、经 invoke 返回值晚于事件到达，无法作为事件守卫；
+  // 改为按状态放行，并在首个事件到达时收养其 sessionId（用于 scan:stop）。
+  function adopt(id: string): void {
+    if (sessionId.value === '') sessionId.value = id
+  }
+
   window.api.onScanProgress((p) => {
-    if (p.sessionId === sessionId.value) progress.value = p
+    if (status.value !== 'scanning') return
+    adopt(p.sessionId)
+    progress.value = p
   })
   window.api.onScanGroup((p) => {
-    if (p.sessionId === sessionId.value) useDupeStore().appendGroups(p.groups)
+    if (status.value !== 'scanning') return
+    adopt(p.sessionId)
+    useDupeStore().appendGroups(p.groups)
   })
   window.api.onScanDone((s) => {
-    if (s.sessionId !== sessionId.value) return
+    if (status.value !== 'scanning') return
+    adopt(s.sessionId)
     summary.value = s
     status.value = 'done'
     useDupeStore().markScanDone()
   })
   window.api.onScanError((p) => {
-    if (p.sessionId !== sessionId.value) return
+    if (status.value !== 'scanning') return
+    adopt(p.sessionId)
     error.value = p.message
     status.value = 'error'
   })
@@ -46,7 +58,9 @@ export const useScanStore = defineStore('scan', () => {
     draft.value = { ...draft.value, targets: [...targets] }
     useDupeStore().reset()
     summary.value = null
+    progress.value = null
     error.value = ''
+    sessionId.value = ''
     status.value = 'scanning'
     try {
       sessionId.value = await window.api.scanStart(deepPlain(draft.value))

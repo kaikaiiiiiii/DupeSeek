@@ -77,13 +77,12 @@ export class ScanEngine {
 
     try {
       const entries = await this.listPhase(settings)
-      const groups: DupeGroup[] = []
-      const wasted = await this.hashPhase(settings, entries, groups)
+      const { count, wasted } = await this.hashPhase(settings, entries)
       const summary: ScanSummary = {
         sessionId,
         canceled: this.canceled,
         filesFound: entries.length,
-        dupeGroups: groups.length,
+        dupeGroups: count,
         wastedBytes: wasted,
         durationMs: Date.now() - startedAt,
         errors: this.errors
@@ -141,9 +140,8 @@ export class ScanEngine {
 
   private async hashPhase(
     settings: ScanSettings,
-    entries: FileEntry[],
-    out: DupeGroup[]
-  ): Promise<number> {
+    entries: FileEntry[]
+  ): Promise<{ count: number; wasted: number }> {
     this.phase = 'hashing'
     this.found = entries.length
 
@@ -156,7 +154,10 @@ export class ScanEngine {
       else buckets.set(key, [e])
     }
 
+    // 计数独立于冲刷缓冲：缓冲发出后即清零，总数必须另记
+    let count = 0
     let wasted = 0
+    const out: DupeGroup[] = []
     let lastFlush = Date.now()
     const flush = (): void => {
       if (out.length === 0) return
@@ -177,9 +178,11 @@ export class ScanEngine {
       // 空文件内容必然相同，免哈希直接成组
       if (bucket[0].size === 0) {
         out.push({ key: `empty:${bucket[0].name}#${bucket.length}`, size: 0, entries: bucket })
+        count++
       } else {
         for (const group of await this.resolveBucket(bucket)) {
           out.push(group)
+          count++
           wasted += group.size * (group.entries.length - 1)
         }
       }
@@ -189,7 +192,7 @@ export class ScanEngine {
 
     this.phase = 'finalizing'
     flush()
-    return wasted
+    return { count, wasted }
   }
 
   /** 阶梯比较一个桶，返回其中的全部重复组（可能多于一个） */
