@@ -55,5 +55,35 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     expanded.value = new Set()
   }
 
-  return { tree, expanded, totalSize, totalDup, dirCount, rows, setTree, toggle, reset }
+  function expandAll(): void {
+    const next = new Set<string>()
+    const walk = (nodes: ScanTreeNode[]): void => {
+      for (const n of nodes) {
+        if (n.children.length > 0) {
+          next.add(n.path)
+          walk(n.children)
+        }
+      }
+    }
+    walk(tree.value)
+    expanded.value = next
+  }
+
+  function collapseAll(): void {
+    expanded.value = new Set()
+  }
+
+  return {
+    tree,
+    expanded,
+    totalSize,
+    totalDup,
+    dirCount,
+    rows,
+    setTree,
+    toggle,
+    reset,
+    expandAll,
+    collapseAll
+  }
 })
