@@ -5,6 +5,13 @@ import icon from '../../resources/icon.png?asset'
 import { closeHashPool } from './scan/hashPool'
 import { registerIpc } from './ipc'
 
+// 提权重启交接：新实例从命令行拿到旧实例 PID 与一次性续扫标记
+function argValue(flag: string): string | undefined {
+  const hit = process.argv.find((a) => a.startsWith(`${flag}=`))
+  return hit?.split('=').slice(1).join('=')
+}
+const handoverPid = Number(argValue('--handover-pid'))
+
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -70,22 +77,27 @@ function boot(): void {
   })
 }
 
-// 单实例锁：提权重启时新旧实例可能短暂交叠，等待旧实例释放锁（最多 ~8s）
-if (app.requestSingleInstanceLock()) {
-  boot()
-} else {
-  let retries = 0
-  const timer = setInterval(() => {
-    retries++
-    if (app.requestSingleInstanceLock()) {
-      clearInterval(timer)
-      boot()
-    } else if (retries > 16) {
-      clearInterval(timer)
-      app.quit()
+// 提权重启交接：先轮询等旧实例（按 PID）退出，再获取单实例锁（确定性，无竞态）
+async function waitForHandover(): Promise<void> {
+  if (!Number.isFinite(handoverPid) || handoverPid <= 0) return
+  for (let i = 0; i < 60; i++) {
+    try {
+      process.kill(handoverPid, 0)
+    } catch {
+      return
     }
-  }, 500)
+    await new Promise((r) => setTimeout(r, 300))
+  }
 }
+
+void (async () => {
+  await waitForHandover()
+  if (app.requestSingleInstanceLock()) {
+    boot()
+  } else {
+    app.quit()
+  }
+})()
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
