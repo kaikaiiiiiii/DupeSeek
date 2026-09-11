@@ -40,26 +40,52 @@ function createWindow(): BrowserWindow {
   return mainWindow
 }
 
-app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.dupeseek')
+function boot(): void {
+  app.whenReady().then(() => {
+    electronApp.setAppUserModelId('com.dupeseek')
 
-  // worker 线程也要能定位随应用分发的二进制（es.exe / UnRAR.exe）
-  process.env['DUPESEEK_BIN_DIR'] = app.isPackaged
-    ? join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'bin')
-    : join(app.getAppPath(), 'resources', 'bin')
+    // worker 线程也要能定位随应用分发的二进制（es.exe / UnRAR.exe）
+    process.env['DUPESEEK_BIN_DIR'] = app.isPackaged
+      ? join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'bin')
+      : join(app.getAppPath(), 'resources', 'bin')
 
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+    app.on('browser-window-created', (_, window) => {
+      optimizer.watchWindowShortcuts(window)
+    })
+
+    const mainWindow = createWindow()
+    let currentWindow: BrowserWindow | null = mainWindow
+    registerIpc(() => currentWindow)
+
+    app.on('second-instance', () => {
+      if (currentWindow && !currentWindow.isDestroyed()) {
+        if (currentWindow.isMinimized()) currentWindow.restore()
+        currentWindow.focus()
+      }
+    })
+
+    app.on('activate', function () {
+      if (BrowserWindow.getAllWindows().length === 0) currentWindow = createWindow()
+    })
   })
+}
 
-  const mainWindow = createWindow()
-  let currentWindow: BrowserWindow | null = mainWindow
-  registerIpc(() => currentWindow)
-
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) currentWindow = createWindow()
-  })
-})
+// 单实例锁：提权重启时新旧实例可能短暂交叠，等待旧实例释放锁（最多 ~8s）
+if (app.requestSingleInstanceLock()) {
+  boot()
+} else {
+  let retries = 0
+  const timer = setInterval(() => {
+    retries++
+    if (app.requestSingleInstanceLock()) {
+      clearInterval(timer)
+      boot()
+    } else if (retries > 16) {
+      clearInterval(timer)
+      app.quit()
+    }
+  }, 500)
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

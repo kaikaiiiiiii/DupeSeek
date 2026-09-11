@@ -26,7 +26,8 @@ export function loadSettings(): AppSettings {
     cached = {
       targets: Array.isArray(raw.targets) ? raw.targets : base.targets,
       favorites: Array.isArray(raw.favorites) ? raw.favorites : base.favorites,
-      scanDraft: { ...base.scanDraft, ...(raw.scanDraft ?? {}) }
+      scanDraft: { ...base.scanDraft, ...(raw.scanDraft ?? {}) },
+      resumeScan: raw.resumeScan === true
     }
   } catch {
     cached = base

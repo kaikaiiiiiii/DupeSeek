@@ -55,6 +55,17 @@ onMounted(async () => {
   useTargetStore().init(settings.targets)
   useScanStore().initDraft(settings.scanDraft)
   useDupeStore().reset()
+
+  // 提权重启后的自动续扫：消费一次性标记，切到扫描页并重扫
+  if (settings.resumeScan) {
+    await useSettingsStore().patch({ resumeScan: false })
+    activeTab.value = 'scan'
+    try {
+      await useScanStore().start()
+    } catch {
+      // 目标为空等启动错误已在扫描页展示
+    }
+  }
 })
 </script>
 

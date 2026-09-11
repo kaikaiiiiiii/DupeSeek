@@ -34,6 +34,8 @@ export class HashPool {
   private pending = new Map<Worker, Map<number, (value: unknown) => void>>()
   private queue: QueueItem[] = []
   private nextId = 1
+  /** 权限不足任务计数（供引擎并入扫描进度） */
+  deniedCount = 0
 
   constructor(size: number) {
     for (let i = 0; i < size; i++) this.spawn()
@@ -73,6 +75,11 @@ export class HashPool {
     }) as Promise<string | null>
   }
 
+  /** 新扫描会话开始时清零 */
+  resetDenied(): void {
+    this.deniedCount = 0
+  }
+
   close(): void {
     this.closed = true
     for (const item of this.queue) item.resolve(null)
@@ -97,11 +104,12 @@ export class HashPool {
   private spawn(): void {
     const w = CreateHashWorker({})
     this.pending.set(w, new Map())
-    w.on('message', (msg: { id: number; value: unknown }) => {
+    w.on('message', (msg: { id: number; value: unknown; denied?: boolean }) => {
       const pend = this.pending.get(w)
       const resolve = pend?.get(msg.id)
       if (pend && resolve) {
         pend.delete(msg.id)
+        if (msg.denied) this.deniedCount++
         resolve(msg.value)
       }
       this.busy.delete(w)

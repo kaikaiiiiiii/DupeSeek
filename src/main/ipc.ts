@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { AppSettings, CleanAction, DirEntry, ScanSettings } from '../shared/types'
 import { runClean } from './clean'
+import { elevateAndRestart } from './elevate'
 import { places } from './places'
 import { loadSettings, saveSettings } from './settings'
 import { ScanEngine } from './scan/engine'
@@ -67,6 +68,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.on('scan:stop', () => engine.stop())
 
   ipcMain.handle('clean:run', (_e, action: CleanAction) => runClean(action))
+  ipcMain.handle('app:elevate', () => elevateAndRestart())
 
   ipcMain.handle('app:get-settings', () => loadSettings())
   ipcMain.handle('app:set-settings', (_e, patch: Partial<AppSettings>) => saveSettings(patch))

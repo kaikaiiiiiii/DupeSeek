@@ -26,6 +26,7 @@ const api: DupeSeekApi = {
   scanStart: (settings) => ipcRenderer.invoke('scan:start', plainJson(settings)),
   scanStop: (sessionId) => ipcRenderer.send('scan:stop', sessionId),
   cleanRun: (action) => ipcRenderer.invoke('clean:run', plainJson(action)),
+  elevate: () => ipcRenderer.invoke('app:elevate'),
   getSettings: () => ipcRenderer.invoke('app:get-settings'),
   setSettings: (patch) => ipcRenderer.invoke('app:set-settings', plainJson(patch)),
 

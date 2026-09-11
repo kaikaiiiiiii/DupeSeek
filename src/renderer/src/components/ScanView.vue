@@ -87,6 +87,15 @@
             {{ formatBytes(scan.progress.bytesHashed) }}</span
           >
         </div>
+        <div v-if="scan.progress.denied > 0" class="elevate-box">
+          <span class="elevate-text">
+            有 {{ scan.progress.denied }} 个文件或目录需要管理员权限才能读取，本次结果可能不完整。
+          </span>
+          <button class="btn small primary" :disabled="elevating" @click="elevate">
+            以管理员身份重启并重新扫描
+          </button>
+          <span v-if="elevateMsg" class="elevate-msg">{{ elevateMsg }}</span>
+        </div>
         <div class="current-path" :title="scan.progress.currentPath">
           {{ scan.progress.currentPath }}
         </div>
@@ -98,6 +107,7 @@
         {{ (scan.summary.durationMs / 1000).toFixed(1) }} 秒
         <span v-if="scan.summary.canceled">（已取消）</span>
         <span v-if="scan.summary.errors > 0">，{{ scan.summary.errors }} 项读取失败</span>
+        <span v-if="scan.summary.denied > 0">，其中 {{ scan.summary.denied }} 项权限不足</span>
       </div>
       <div v-if="scan.status === 'error'" class="summary error">{{ scan.error }}</div>
     </div>
@@ -147,6 +157,25 @@ const minUnit = ref<SizeUnit>('MB')
 const maxUnit = ref<SizeUnit>('GB')
 const blacklistText = ref('')
 const whitelistText = ref('')
+
+const elevating = ref(false)
+const elevateMsg = ref('')
+
+/** 请求 UAC 提权：成功后主进程会保存续扫标记并退出，由管理员实例自动重扫 */
+async function elevate(): Promise<void> {
+  elevating.value = true
+  elevateMsg.value = ''
+  try {
+    const ok = await window.api.elevate()
+    elevateMsg.value = ok
+      ? '已获得授权，正在以管理员身份重启…'
+      : '未获得授权（UAC 被取消或被系统策略拒绝）'
+  } catch {
+    elevateMsg.value = '提权请求失败'
+  } finally {
+    elevating.value = false
+  }
+}
 
 onMounted(() => {
   const d = scan.draft
@@ -287,6 +316,26 @@ async function startScan(): Promise<void> {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.elevate-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+}
+
+.elevate-text {
+  flex: 1;
+  color: var(--danger);
+}
+
+.elevate-msg {
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .summary {

@@ -2,17 +2,18 @@ import { createHash } from 'crypto'
 import { createReadStream } from 'fs'
 import type { Readable } from 'stream'
 
-/** 对流做 md5；capBytes 限制读取上限（读到即返回）；任何错误返回 null */
-export function hashStreamMd5(stream: Readable, capBytes?: number): Promise<string | null> {
-  return new Promise((resolve) => {
+/** 对流做 md5；capBytes 限制读取上限（读到即返回）；读取错误以 reject 抛出（保留 errno 供上层识别） */
+export function hashStreamMd5(stream: Readable, capBytes?: number): Promise<string> {
+  return new Promise((resolve, reject) => {
     const hash = createHash('md5')
     let read = 0
     let settled = false
-    const finish = (value: string | null): void => {
+    const finish = (value: string | undefined, err?: unknown): void => {
       if (settled) return
       settled = true
       stream.destroy()
-      resolve(value)
+      if (err !== undefined) reject(err)
+      else resolve(value as string)
     }
     stream.on('data', (chunk: Buffer) => {
       if (settled) return
@@ -22,16 +23,16 @@ export function hashStreamMd5(stream: Readable, capBytes?: number): Promise<stri
       if (capBytes !== undefined && read >= capBytes) finish(hash.digest('hex'))
     })
     stream.on('end', () => finish(hash.digest('hex')))
-    stream.on('error', () => finish(null))
+    stream.on('error', (err) => finish(undefined, err))
   })
 }
 
-/** 普通文件前 capBytes 字节的 md5 */
-export function md5HeadFile(filePath: string, capBytes: number): Promise<string | null> {
+/** 普通文件前 capBytes 字节的 md5；读取失败 reject（EACCES/EPERM 等保留在 err.code） */
+export function md5HeadFile(filePath: string, capBytes: number): Promise<string> {
   return hashStreamMd5(createReadStream(filePath, { end: capBytes - 1 }))
 }
 
 /** 普通文件全量 md5 */
-export function md5FullFile(filePath: string): Promise<string | null> {
+export function md5FullFile(filePath: string): Promise<string> {
   return hashStreamMd5(createReadStream(filePath))
 }
