@@ -4,8 +4,16 @@ import { spawn } from 'child_process'
 import fs from 'fs'
 import { createHash } from 'crypto'
 import { path7za } from '7zip-bin'
-import { createExtractorFromFile, createExtractorFromData } from 'node-unrar-js'
+import { createExtractorFromFile } from 'node-unrar-js'
 import type { ArchiveType } from '../../shared/types'
+
+/** 原生 unrar.exe（resources/bin 随应用分发），由主进程经环境变量告知位置 */
+function unrarExe(): string | null {
+  const bin = process.env['DUPESEEK_BIN_DIR']
+  if (!bin) return null
+  const p = bin + '\\UnRAR.exe'
+  return fs.existsSync(p) ? p : null
+}
 
 export interface ArchiveEntryMeta {
   /** 包内条目路径（工具返回的原样分隔符） */
@@ -110,14 +118,14 @@ export async function listArchive(
   return type === 'rar' ? listRar(containerPath) : listSevenZip(containerPath)
 }
 
-/** 7za 把条目解压到 stdout，流式哈希；退出码非 0 且非主动截断时视为失败 */
-async function hashSevenZipEntry(
-  containerPath: string,
-  entryPath: string,
+/** 解压工具把条目写到 stdout，流式哈希；cap 读满提前 kill（信任摘要），否则退出码非 0 视为失败 */
+function hashSpawnStdout(
+  toolPath: string,
+  args: string[],
   capBytes?: number
 ): Promise<string | null> {
   return new Promise((resolve) => {
-    const child = spawn(path7za, ['x', '-y', '-so', containerPath, entryPath], {
+    const child = spawn(toolPath, args, {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe']
     })
@@ -174,24 +182,26 @@ async function hashSevenZipEntry(
   })
 }
 
-/** rar：整包读入 worker 内存，解压目标条目后哈希（解压到内存） */
+/** 7za 把条目解压到 stdout，流式哈希 */
+async function hashSevenZipEntry(
+  containerPath: string,
+  entryPath: string,
+  capBytes?: number
+): Promise<string | null> {
+  return hashSpawnStdout(path7za, ['x', '-y', '-so', containerPath, entryPath], capBytes)
+}
+
+/** rar：原生 unrar.exe 把条目解压到 stdout，流式哈希（cap 读满即提前终止）。
+ *  注意：native unrar 匹配包内路径要求反斜杠分隔（node-unrar-js 列表给的是正斜杠） */
 async function hashRarEntry(
   containerPath: string,
   entryPath: string,
   capBytes?: number
 ): Promise<string | null> {
-  const buf = fs.readFileSync(containerPath)
-  const ext = await createExtractorFromData({
-    data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
-  })
-  const extracted = ext.extract({ files: [entryPath] })
-  for (const f of extracted.files) {
-    const content = f.extraction
-    if (!content) continue
-    const slice = capBytes && content.length > capBytes ? content.subarray(0, capBytes) : content
-    return createHash('md5').update(slice).digest('hex')
-  }
-  return null
+  const unrar = unrarExe()
+  if (!unrar) return null
+  const nativePath = entryPath.replace(/\//g, '\\')
+  return hashSpawnStdout(unrar, ['p', '-inul', '-y', containerPath, nativePath], capBytes)
 }
 
 export function hashArchiveEntry(

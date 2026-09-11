@@ -223,7 +223,18 @@ export class ScanEngine {
       try {
         const metas = (await pool.archiveList(type, c.path)) as ArchiveEntryMeta[] | null
         if (metas === null) throw new Error('元信息读取失败')
+        // 压缩包即特殊目录：合成根挂在容器所在的真实目录下，包内子目录逐级挂在其下
+        const root = c.path + '!'
+        this.recordDirAt(root, path.dirname(c.path), path.basename(c.path))
         for (const m of metas) {
+          const segs = m.entryPath.split(/[\\/]/)
+          let p = root
+          for (let i = 0; i < segs.length - 1; i++) {
+            const next = p + '/' + segs[i]
+            this.recordDirAt(next, p, segs[i])
+            p = next
+          }
+          this.addArchiveBytes(c.path, m.entryPath, m.size, false)
           const entry = buildArchiveEntry(c, type, m, settings)
           if (entry) {
             entries.push(entry)
@@ -319,6 +330,33 @@ export class ScanEngine {
     })
   }
 
+  /** 显式指定父节点的登记（用于 `容器!/包内路径` 这类合成目录，dirname 不适用） */
+  private recordDirAt(p: string, parent: string, name: string): void {
+    if (this.dirs.has(p)) return
+    this.dirs.set(p, { parent, name, size: 0, dup: 0 })
+  }
+
+  /** 压缩包条目的体积沿包内合成目录链累加，止步于合成根（不进入真实目录，避免与压缩后的包体积重复计账） */
+  private addArchiveBytes(
+    containerPath: string,
+    entryPath: string,
+    bytes: number,
+    dup: boolean
+  ): void {
+    const root = containerPath + '!'
+    const segs = entryPath.split(/[\\/]/)
+    let p = root
+    for (let i = 0; i < segs.length - 1; i++) p = p + '/' + segs[i]
+    for (;;) {
+      const rec = this.dirs.get(p)
+      if (!rec) break
+      if (dup) rec.dup += bytes
+      else rec.size += bytes
+      if (p === root) break
+      p = rec.parent
+    }
+  }
+
   /** 把字节数沿文件的祖先目录链累加到目标根为止 */
   private addBytes(filePath: string, bytes: number, dup: boolean): void {
     let p = path.dirname(filePath)
@@ -335,12 +373,16 @@ export class ScanEngine {
   }
 
   /** 重复占用的归集口径：每组保留最早修改的一份，其余副本计入各自所在目录；
-   *  压缩包内副本无法独立删除，不参与归集 */
+   *  压缩包内副本计入包内合成目录链 */
   private attributeDup(group: DupeGroup): void {
     const kept = group.entries.reduce((a, b) => (a.mtime <= b.mtime ? a : b))
     for (const e of group.entries) {
-      if (e.path === kept.path || e.containerPath !== null) continue
-      this.addBytes(e.path, e.size, true)
+      if (e.path === kept.path) continue
+      if (e.containerPath !== null && e.entryPath !== null) {
+        this.addArchiveBytes(e.containerPath, e.entryPath, e.size, true)
+      } else {
+        this.addBytes(e.path, e.size, true)
+      }
     }
   }
 

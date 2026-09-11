@@ -43,6 +43,11 @@ function createWindow(): BrowserWindow {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.dupeseek')
 
+  // worker 线程也要能定位随应用分发的二进制（es.exe / UnRAR.exe）
+  process.env['DUPESEEK_BIN_DIR'] = app.isPackaged
+    ? join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'bin')
+    : join(app.getAppPath(), 'resources', 'bin')
+
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
