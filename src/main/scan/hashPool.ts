@@ -1,10 +1,13 @@
-import os from 'os'
 import { Worker } from 'worker_threads'
 import CreateHashWorker from './hash.worker?nodeWorker'
 import type { ArchiveEntryMeta } from './archives'
 
-/** 默认 worker 数：留出主进程与 I/O 余量 */
-export const HASH_WORKERS = Math.max(2, Math.min(8, os.availableParallelism() - 1))
+/**
+ * worker 数取 4：基准权衡的结果——SSD 小文件场景 x8 比 x4 快约 25-35%，
+ * 但 HDD 大文件全量读时 8 路并发寻道竞争反而比单流慢 16-21%（x4 介于两者）。
+ * 介质感知（HDD/SSD/网络/光盘）的动态调整留作未来优化，见 docs/DupeSeek.md。
+ */
+export const HASH_WORKERS = 4
 
 export type HashJobKind = 'md5-head' | 'md5-full' | 'archive-list' | 'archive-head' | 'archive-full'
 
