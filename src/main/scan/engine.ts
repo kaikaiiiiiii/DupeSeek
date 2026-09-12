@@ -184,9 +184,11 @@ export class ScanEngine {
       }
     }
 
-    // 优先 Everything 枚举；未安装 / 未运行 / 单目标失败时逐目标回退 fs walk
-    const lister = await createEverythingLister()
-    console.info(`[scan] 枚举通道：${lister ? 'Everything (es.exe)' : 'fs walk'}`)
+    // 优先 Everything 枚举（可在设置中关闭）；未安装 / 未运行 / 单目标失败时逐目标回退 fs walk
+    const lister = settings.useEverything ? await createEverythingLister() : null
+    console.info(
+      `[scan] 枚举通道：${lister ? 'Everything (es.exe)' : settings.useEverything ? 'fs walk（Everything 不可用）' : 'fs walk（已在设置中禁用 Everything）'}`
+    )
 
     const tick = setInterval(() => {
       this.found = entries.length
