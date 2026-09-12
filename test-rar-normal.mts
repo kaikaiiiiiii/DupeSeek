@@ -7,31 +7,10 @@ import { createHash } from 'node:crypto'
 const require_ = createRequire(import.meta.url)
 const UNRAR = 'D:\\Coding\\DupeSeek\\resources\\bin\\UnRAR.exe'
 const RAR = 'D:\\Coding\\vosscript.normal.rar'
-const HEAD = 1048576
 
 interface EntrySpec {
   name: string
   size: number
-}
-
-interface EsRow {
-  filename: string
-}
-
-function esSpawn(args: string[]): Promise<string> {
-  const ES = 'D:\\Coding\\DupeSeek\\resources\\bin\\es.exe'
-  return new Promise((resolve) => {
-    const child = spawn(ES, args, { windowsHide: true })
-    let out = ''
-    child.stdout.on('data', (c: Buffer) => (out += c.toString('utf8')))
-    child.on('exit', () => resolve(out))
-  })
-}
-
-function parseEs(text: string): EsRow[] {
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
-  if (!text.trim()) return []
-  return JSON.parse(text)
 }
 
 /** rar 条目清单（顺序 = 数据流顺序） */
