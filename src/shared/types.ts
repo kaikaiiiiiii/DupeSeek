@@ -41,6 +41,8 @@ export interface ScanSettings {
   /** 是否把 zip/7z/rar 内的条目纳入比对（压缩包文件本身始终参与） */
   scanArchives: boolean
   archiveTypes: ArchiveType[]
+  /** 是否允许使用本机 Everything 加速枚举（不可用时自动回退 fs walk） */
+  useEverything: boolean
 }
 
 export type ScanPhase = 'listing' | 'hashing' | 'finalizing'

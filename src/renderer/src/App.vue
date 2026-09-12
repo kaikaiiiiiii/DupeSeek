@@ -29,6 +29,7 @@ import { computed, onMounted, ref } from 'vue'
 import DupeList from './components/DupeList.vue'
 import ExplorerView from './components/ExplorerView.vue'
 import ScanView from './components/ScanView.vue'
+import SettingsView from './components/SettingsView.vue'
 import TargetList from './components/TargetList.vue'
 import TreeSizeView from './components/TreeSizeView.vue'
 import { useDupeStore } from './stores/dupe'
@@ -40,7 +41,8 @@ const tabs = [
   { id: 'explorer', label: '浏览', component: ExplorerView },
   { id: 'scan', label: '扫描', component: ScanView },
   { id: 'dupes', label: '清理', component: DupeList },
-  { id: 'treesize', label: '空间分析', component: TreeSizeView }
+  { id: 'treesize', label: '空间分析', component: TreeSizeView },
+  { id: 'settings', label: '设置', component: SettingsView }
 ] as const
 
 type TabId = (typeof tabs)[number]['id']

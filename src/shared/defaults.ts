@@ -12,6 +12,7 @@ export function defaultScanDraft(): ScanSettings {
     extBlacklist: [],
     extWhitelist: [],
     scanArchives: true,
-    archiveTypes: ['zip', '7z', 'rar'] as ArchiveType[]
+    archiveTypes: ['zip', '7z', 'rar'] as ArchiveType[],
+    useEverything: true
   }
 }
