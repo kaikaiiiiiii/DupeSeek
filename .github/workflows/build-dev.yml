@@ -1,0 +1,46 @@
+# dev 分支自动编译：Windows 安装包，产物名 dupeseek_dev
+# master 暂无自动编译（按需后续添加）
+name: build-dev
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: build-dev
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: 构建
+        run: npm run build
+
+      - name: 打包（Windows NSIS，产物名 dupeseek_dev）
+        run: npx electron-builder --win -c.artifactName=dupeseek_dev-setup.${ext}
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dupeseek_dev
+          path: dist/*.exe
+          if-no-files-found: error
