@@ -271,8 +271,23 @@ export class ScanEngine {
     const excluded: string[] = []
     const dirOk: string[] = []
     for (const dir of res.dirs) {
-      if (settingsExcludesDir(path.basename(dir), settings)) excluded.push(dir)
-      else dirOk.push(dir)
+      if (settingsExcludesDir(path.basename(dir), settings)) {
+        excluded.push(dir)
+        continue
+      }
+      // junction / 目录符号链接：es 查询无法可靠按 reparse 属性排除，用 lstat 对齐 walk 通道
+      if (settings.excludeJunction) {
+        try {
+          if ((await fs.promises.lstat(dir)).isSymbolicLink()) {
+            excluded.push(dir)
+            continue
+          }
+        } catch {
+          excluded.push(dir)
+          continue
+        }
+      }
+      dirOk.push(dir)
     }
     const isExcluded = (p: string): boolean => {
       const lower = p.toLowerCase()
