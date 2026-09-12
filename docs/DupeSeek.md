@@ -9,7 +9,7 @@
 * 前端使用 pinia 进行状态管理，确保应用状态的一致性和可维护性。
 * 前端的 layout 组件和 UI 功能组件分离，确保代码的模块化和可复用性。
 * 后端使用多线程或异步处理来加速文件扫描和哈希计算，避免界面卡顿。当前实现：md5（headMD5/fullMD5）计算运行在 worker_threads 线程池（`HashPool`，worker 数 `min(8, CPU核数-1)`，崩溃自动重建），设置持久化当前为 JSON 文件。
-* 文件枚举优先走 Everything：检测 `resources/bin/es.exe`（随应用分发）并确认 Everything IPC 可达，用 `-path <目标> -export-json` 获取文件与目录清单；未安装、未运行、目标未收录（如非 NTFS 卷）或查询失败时，**逐目标**回退 fs.walk。junction/符号链接在 Everything 通道经 `-a-L` 属性排除。
+* 文件枚举优先走 Everything：检测 `resources/bin/es.exe`（随应用分发）并确认 Everything IPC 可达，用 `-path <目标> -export-json` 获取文件与目录清单；未安装、未运行、目标未收录（如非 NTFS 卷）或查询失败时，**逐目标**回退 fs.walk。junction/符号链接目录经引擎侧 lstat 识别并按子树剔除（es 的属性过滤连写 `-a-d-L` 与 `/a-d-L` 在 1.1.0.37 实测解析损坏——D 排除失效、目录全量漏入，勿用；属性开关单独使用 `/a-d`、`/ad` 形式已实测可靠）。
 * 哈希 worker 数固定为 4（基准实测的折中：SSD 海量小文件 x8 比 x4 快 25-35%，但 HDD 大文件全量读 8 路并发寻道竞争反而比单流慢 16-21%，x4 居中）。基准脚本见工程根目录 bench-async.mjs / bench-sync.mjs。
 * **未来优化点——介质感知 worker 调度**：存储介质除 HDD/SSD 外还可能是网络挂载盘、光盘等，各自最优并发差异很大。待软件成熟后引入介质探测（`Get-PhysicalDisk` MediaType / IO 花费采样），按介质与文件大小分布动态调整 worker 数与大文件全量读的并行度（HDD 大文件 fullMD5 建议串行）。
 * 压缩包（zip/7z/rar）视为特殊目录：元信息（size/crc32）经 7za `-slt` 与 unrar（WASM）读取，条目以 `容器::包内路径` 建条；纯压缩包桶先做 crc32 门控，head/full 比较时解压到内存并流式哈希——rar 走原生 `resources/bin/UnRAR.exe`（`p -inul` 流式输出，注意包内路径需反斜杠），7za 走 `x -so`。体积树中压缩包显示为合成目录节点（包内体积按解压后大小计），包内副本不可独立清理。
