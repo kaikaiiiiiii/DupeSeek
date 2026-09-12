@@ -1,5 +1,11 @@
 <template>
-  <div class="dir-row" :class="{ active }">
+  <div
+    class="dir-row"
+    :class="{ active }"
+    draggable="true"
+    :title="entry.isDir ? '拖到左侧加入扫描列表；单击进入目录' : '拖到左侧加入扫描列表'"
+    @dragstart="onDragStart"
+  >
     <span
       class="entry-main"
       :class="{ nav: entry.isDir }"
@@ -21,7 +27,7 @@
 import type { DirEntry } from '../../../shared/types'
 import { formatBytes, formatTime } from '../utils/format'
 
-defineProps<{
+const props = defineProps<{
   entry: DirEntry
   active: boolean
 }>()
@@ -30,6 +36,12 @@ const emit = defineEmits<{
   open: []
   toggle: []
 }>()
+
+/** 应用内拖拽：TargetList 按此 MIME 类型识别（区别于系统文件拖放） */
+function onDragStart(ev: DragEvent): void {
+  ev.dataTransfer?.setData('application/x-dupeseek-path', props.entry.path)
+  if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'copy'
+}
 </script>
 
 <style scoped>
