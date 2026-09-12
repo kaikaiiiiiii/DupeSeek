@@ -11,6 +11,8 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+  # 7za.exe（zip/7z 解压工具）必须可执行，asar 内无法 spawn
+  - node_modules/7zip-bin/**
 win:
   executableName: dupeseek
 nsis:
