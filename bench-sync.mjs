@@ -1,5 +1,5 @@
-// 基准 B：同步 fs 枚举 + 同步读取 head-1MB md5（支持多 worker）
-// 用法：node bench-sync.mjs <目录> <worker数>
+// 基准 B：同步 fs 枚举 + 同步读取 md5（支持多 worker）
+// 用法：node bench-sync.mjs <目录> <worker数> [head|full] [文件数上限]
 import fs from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
@@ -7,6 +7,8 @@ import { Worker } from 'node:worker_threads'
 
 const root = path.resolve(process.argv[2] ?? '.')
 const workerCount = Number(process.argv[3] ?? 1)
+const mode = process.argv[4] ?? 'head'
+const fileLimit = Number(process.argv[5] ?? Infinity)
 const HEAD = 1024 * 1024
 
 function walkSync(dir, out) {
@@ -24,19 +26,20 @@ function walkSync(dir, out) {
 }
 
 function headMd5Sync(p, size) {
-  const len = Math.min(size, HEAD)
+  const len = mode === 'full' ? size : Math.min(size, HEAD)
   const fd = fs.openSync(p, 'r')
   try {
-    const buf = Buffer.allocUnsafe(len)
+    const buf = Buffer.allocUnsafe(Math.min(len, HEAD))
+    const hash = createHash('md5')
     let read = 0
     while (read < len) {
-      const n = fs.readSync(fd, buf, read, len - read, read)
+      const want = Math.min(HEAD, len - read)
+      const n = fs.readSync(fd, buf, 0, want, read)
       if (n <= 0) break
+      hash.update(n === want ? buf : buf.subarray(0, n))
       read += n
     }
-    return createHash('md5')
-      .update(read === len ? buf : buf.subarray(0, read))
-      .digest('hex')
+    return hash.digest('hex')
   } finally {
     fs.closeSync(fd)
   }
@@ -45,6 +48,7 @@ function headMd5Sync(p, size) {
 const t0 = performance.now()
 const files = []
 walkSync(root, files)
+if (Number.isFinite(fileLimit)) files.length = Math.min(files.length, fileLimit)
 const walkMs = performance.now() - t0
 
 const t1 = performance.now()
@@ -56,7 +60,7 @@ if (workerCount <= 1) {
     try {
       const st = fs.statSync(p)
       headMd5Sync(p, st.size)
-      bytes += Math.min(st.size, HEAD)
+      bytes += mode === 'full' ? st.size : Math.min(st.size, HEAD)
     } catch {
       failed++
     }
@@ -68,18 +72,22 @@ if (workerCount <= 1) {
     const fs = require('node:fs')
     const { createHash } = require('node:crypto')
     const HEAD = 1024 * 1024
+    const FULL = ${mode === 'full'}
     function headMd5Sync(p, size) {
-      const len = Math.min(size, HEAD)
+      const len = FULL ? size : Math.min(size, HEAD)
       const fd = fs.openSync(p, 'r')
       try {
-        const buf = Buffer.allocUnsafe(len)
+        const buf = Buffer.allocUnsafe(Math.min(len, HEAD))
+        const hash = createHash('md5')
         let read = 0
         while (read < len) {
-          const n = fs.readSync(fd, buf, read, len - read, read)
+          const want = Math.min(HEAD, len - read)
+          const n = fs.readSync(fd, buf, 0, want, read)
           if (n <= 0) break
+          hash.update(n === want ? buf : buf.subarray(0, n))
           read += n
         }
-        return createHash('md5').update(read === len ? buf : buf.subarray(0, read)).digest('hex')
+        return hash.digest('hex')
       } finally { fs.closeSync(fd) }
     }
     parentPort.on('message', (paths) => {
@@ -89,16 +97,21 @@ if (workerCount <= 1) {
         try {
           const st = fs.statSync(p)
           headMd5Sync(p, st.size)
-          bytes += Math.min(st.size, HEAD)
+          bytes += FULL ? st.size : Math.min(st.size, HEAD)
         } catch { failed++ }
       }
       parentPort.postMessage({ bytes, failed })
     })
   `
-  const CHUNK = 256
-  const pool = Array.from({ length: workerCount }, () => new Worker(workerCode, { eval: true }))
+  // 分片大小自适应：文件多时 256/片，文件少时按 worker 数均分（保证真并行）
+  const CHUNK =
+    files.length >= 256 ? 256 : Math.max(1, Math.ceil(files.length / Math.max(1, workerCount)))
+  // 只创建真正会领到分片的 worker：分片数少于 worker 数时，空分片 worker 永远
+  // 不会回报，导致 remaining 永远无法归零（死锁）
+  const active = Math.max(1, Math.min(workerCount, Math.ceil(files.length / CHUNK)))
+  const pool = Array.from({ length: active }, () => new Worker(workerCode, { eval: true }))
   let next = 0
-  const results = Array.from({ length: workerCount }, () => ({ bytes: 0, failed: 0 }))
+  const results = Array.from({ length: active }, () => ({ bytes: 0, failed: 0 }))
   const feed = (w) => {
     const chunk = files.slice(next, next + CHUNK)
     next += chunk.length
@@ -106,7 +119,7 @@ if (workerCount <= 1) {
     else w.unref?.()
   }
   await new Promise((resolve) => {
-    let remaining = workerCount
+    let remaining = active
     pool.forEach((w, i) => {
       w.on('message', (r) => {
         results[i].bytes += r.bytes
@@ -124,7 +137,7 @@ const hashMs = performance.now() - t1
 
 console.log(
   JSON.stringify({
-    variant: `sync x${workerCount}`,
+    variant: `sync x${workerCount} ${mode}`,
     files: files.length,
     walkMs: Math.round(walkMs),
     hashMs: Math.round(hashMs),
@@ -133,3 +146,5 @@ console.log(
     failed
   })
 )
+// worker 线程残留会拖住事件循环导致进程不退出，基准打印完直接结束
+process.exit(0)
