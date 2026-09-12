@@ -2,7 +2,6 @@
 // 注意：不用正则字面量——Node --experimental-strip-types 会损坏含反斜杠的正则
 // 用法：node --experimental-strip-types test-es-flags.mts
 import { spawn } from 'node:child_process'
-import fs from 'node:fs'
 
 const ES = 'D:\\Coding\\DupeSeek\\resources\\bin\\es.exe'
 const SCOPE = 'C:\\Users\\kaikai\\scoop\\persist\\bun\\install\\cache'
@@ -35,11 +34,17 @@ const isJunctionRoot = (p: string): boolean => p.endsWith('@@@1')
 
 async function main(): Promise<void> {
   // 真值：junction 全集（<包名>\<版本>@@@1 形式，fsutil 已验证该模式为 mount point）
-  const junctions = new Set((parse(await run(['-path', SCOPE, '-n', '5000', '-json', '-full-path-and-name', '/aL'])).filter((p) => isJunctionRoot(p))))
+  const junctions = new Set(
+    parse(await run(['-path', SCOPE, '-n', '5000', '-json', '-full-path-and-name', '/aL'])).filter(
+      (p) => isJunctionRoot(p)
+    )
+  )
   console.log('junction 真值数量:', junctions.size)
 
   for (const flag of ['/ad-L', '/a-d-L', '/ad', '/a-d']) {
-    const rows = parse(await run(['-path', SCOPE, '-n', '5000', '-json', '-full-path-and-name', flag]))
+    const rows = parse(
+      await run(['-path', SCOPE, '-n', '5000', '-json', '-full-path-and-name', flag])
+    )
     const leakedJunctions = rows.filter((p) => junctions.has(p))
     // 扁平真实目录（<包名>@<版本>@@@1）：普通目录，不应被任何排除误伤
     const flattened = rows.filter((p) => isJunctionRoot(p) && !junctions.has(p))
