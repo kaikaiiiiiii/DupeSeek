@@ -100,11 +100,7 @@ async function listViaEs(esPath: string, target: string): Promise<EverythingList
       ['-path', target, '-a-d', ...layout, '-export-json', outFile],
       ES_TIMEOUT_MS
     )
-    await runEs(
-      esPath,
-      ['-path', target, '-ad', ...layout, '-export-json', outDir],
-      ES_TIMEOUT_MS
-    )
+    await runEs(esPath, ['-path', target, '-ad', ...layout, '-export-json', outDir], ES_TIMEOUT_MS)
     const files = parseRows(fs.readFileSync(outFile, 'utf8'))
     const dirs = parseRows(fs.readFileSync(outDir, 'utf8')).map((r) =>
       r.filename.replace(/[\\/]+$/, '')
