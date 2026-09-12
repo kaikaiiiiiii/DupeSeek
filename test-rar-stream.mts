@@ -23,25 +23,6 @@ interface StreamResult {
   peakRSSmb: number
 }
 
-function esSpawn(args: string[]): Promise<string> {
-  const ES = 'D:\\Coding\\DupeSeek\\resources\\bin\\es.exe'
-  return new Promise((resolve) => {
-    const child = spawn(ES, args, { windowsHide: true })
-    let out = ''
-    child.stdout.on('data', (c: Buffer) => (out += c.toString('utf8')))
-    child.on('exit', () => resolve(out))
-  })
-}
-
-/** rar 条目清单（顺序 = unrar p 数据流顺序） */
-async function listing(): Promise<EntrySpec[]> {
-  const { createExtractorFromFile } = require_('node-unrar-js')
-  const ext = await createExtractorFromFile({ filepath: RAR })
-  return [...ext.getFileList().fileHeaders]
-    .filter((h) => !h.flags.directory)
-    .map((h) => ({ name: h.name, size: h.unpSize }))
-}
-
 /**
  * 方案 B：unrar p 全量输出（无条目过滤，全部条目按存档顺序串联），
  * 按清单未压缩大小切片——每条目独立双哈希（full + head-1MB），零落盘

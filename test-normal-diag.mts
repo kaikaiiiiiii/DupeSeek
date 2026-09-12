@@ -1,13 +1,11 @@
 // vosscript.normal.rar 诊断：全量解压 vs 逐条目解压 计时 + 54 条缺失定位
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 
 const require_ = createRequire(import.meta.url)
 const UNRAR = 'D:\\Coding\\DupeSeek\\resources\\bin\\UnRAR.exe'
 const RAR = 'D:\\Coding\\vosscript.normal.rar'
-const XTREE = 'C:\\tmp-xtract'
 
 interface Spec {
   name: string
@@ -21,12 +19,6 @@ function unrarOut(args: string[]): Promise<{ code: number | null; out: Buffer }>
     child.stdout.on('data', (c: Buffer) => chunks.push(c))
     child.on('exit', (code) => resolve({ code, out: Buffer.concat(chunks) }))
   })
-}
-
-function parseEs(text: string): Spec[] {
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
-  if (!text.trim()) return []
-  return JSON.parse(text).map((r) => ({ name: '', size: 0 }))
 }
 
 async function main(): Promise<void> {
@@ -47,7 +39,6 @@ async function main(): Promise<void> {
   console.log('全量解压 (x 到临时目录):', xMs, 'ms')
 
   // 3) 逐条目独立解压采样（p 单条）：30 个均匀样本
-  const tP0 = Date.now()
   let pSum = 0
   let pMax = 0
   let pOk = 0
