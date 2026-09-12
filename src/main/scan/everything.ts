@@ -16,10 +16,12 @@ export interface EverythingMeta {
 }
 
 export interface EverythingListResult {
-  /** 目标目录下的全部子目录（不含目标本身，不含 reparse point） */
+  /** 目标目录下的全部子目录（含 reparse point 目录，剔除由调用方完成） */
   dirs: string[]
   /** 目标目录下的全部文件（不含 reparse point） */
   files: EverythingMeta[]
+  /** 目标目录下的全部 reparse point 路径（junction/符号链接/云占位），用于子树剔除 */
+  reparse: string[]
 }
 
 export interface EverythingLister {
@@ -77,6 +79,7 @@ async function listViaEs(esPath: string, target: string): Promise<EverythingList
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`
   const outFile = path.join(os.tmpdir(), `dupeseek-es-f-${stamp}.json`)
   const outDir = path.join(os.tmpdir(), `dupeseek-es-d-${stamp}.json`)
+  const outReparse = path.join(os.tmpdir(), `dupeseek-es-r-${stamp}.json`)
   // 布局：filename=完整路径；size 字节；date_modified 为 ISO-8601 UTC
   const layout = [
     '-json',
@@ -92,17 +95,26 @@ async function listViaEs(esPath: string, target: string): Promise<EverythingList
     '10000'
   ]
   try {
-    // 属性开关用文档形式 /a-d 与 /ad。实测（es 1.1.0.37）：连写 -a-d-L 与 /a-d-L
-    // 均解析错误（D 排除失效，目录全量漏入）。junction/符号链接目录由引擎侧
-    // lstat 排除（与 walk 通道语义对齐），目录清单用 /ad 全量返回。
+    // 属性开关用文档形式 /a-d、/ad、/aL，每个开关只携带一个属性。
+    // 实测（es 1.1.0.37）：多属性塞进单个开关的组合形式（/a-d-L 等）D 排除失效。
+    // junction/符号链接/云占位等 reparse point 统一经 /aL 清单返回，
+    // 由调用方（引擎）做内存前缀剔除，不依赖 es 的属性排除语法。
     await runEs(
       esPath,
       ['-path', target, '/a-d', ...layout, '-export-json', outFile],
       ES_TIMEOUT_MS
     )
     await runEs(esPath, ['-path', target, '/ad', ...layout, '-export-json', outDir], ES_TIMEOUT_MS)
+    await runEs(
+      esPath,
+      ['-path', target, '/aL', '-json', '-full-path-and-name', '-export-json', outReparse],
+      ES_TIMEOUT_MS
+    )
     const files = parseRows(fs.readFileSync(outFile, 'utf8'))
     const dirs = parseRows(fs.readFileSync(outDir, 'utf8')).map((r) =>
+      r.filename.replace(/[\\/]+$/, '')
+    )
+    const reparse = parseRows(fs.readFileSync(outReparse, 'utf8')).map((r) =>
       r.filename.replace(/[\\/]+$/, '')
     )
 
@@ -119,6 +131,7 @@ async function listViaEs(esPath: string, target: string): Promise<EverythingList
 
     return {
       dirs,
+      reparse,
       files: files.map((r) => ({
         filename: r.filename,
         size: r.size ?? 0,
@@ -128,6 +141,7 @@ async function listViaEs(esPath: string, target: string): Promise<EverythingList
   } finally {
     fs.rmSync(outFile, { force: true })
     fs.rmSync(outDir, { force: true })
+    fs.rmSync(outReparse, { force: true })
   }
 }
 
