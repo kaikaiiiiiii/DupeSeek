@@ -267,6 +267,13 @@ export class ScanEngine {
     const res = await lister.list(target)
     this.recordDir(target)
 
+    // reparse point 清单（/aL 一次查询）：junction/符号链接目录 + 云占位等。
+    // 内存前缀比较替代逐目录 lstat——目录数量大时显著更快，且不产生磁盘 I/O。
+    const reparseSet = new Set(res.reparse.map((p) => p.toLowerCase()))
+    const isReparse = (p: string): boolean => reparseSet.has(p.toLowerCase())
+    // excludeJunction=false 时 junction 子树照常纳入（与 walk 通道语义一致）
+    const skipReparse = settings.excludeJunction
+
     // 目录级排除：被排除目录的整棵子树都要剔除（Everything 返回顺序不定，先收集前缀再统一过滤）
     const excluded: string[] = []
     const dirOk: string[] = []
@@ -275,17 +282,10 @@ export class ScanEngine {
         excluded.push(dir)
         continue
       }
-      // junction / 目录符号链接：es 查询无法可靠按 reparse 属性排除，用 lstat 对齐 walk 通道
-      if (settings.excludeJunction) {
-        try {
-          if ((await fs.promises.lstat(dir)).isSymbolicLink()) {
-            excluded.push(dir)
-            continue
-          }
-        } catch {
-          excluded.push(dir)
-          continue
-        }
+      // junction / 目录符号链接 / 云占位目录：reparse 清单命中即整棵剔除
+      if (isReparse(dir) && skipReparse) {
+        excluded.push(dir)
+        continue
       }
       dirOk.push(dir)
     }
@@ -298,7 +298,9 @@ export class ScanEngine {
     }
 
     for (const f of res.files) {
-      if (isExcluded(f.filename)) continue
+      // reparse 文件（文件符号链接/云占位文件）：读取前者会穿越链接、
+      // 读取后者会触发云端下载，均不符合本地查重的定位
+      if (isExcluded(f.filename) || (isReparse(f.filename) && skipReparse)) continue
       const name = path.basename(f.filename)
       if (settings.excludeHidden && name.startsWith('.')) continue
       const cls = extOf(name)
