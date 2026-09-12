@@ -2,6 +2,7 @@
 // 因此禁止 import electron。
 import { spawn } from 'child_process'
 import fs from 'fs'
+import path from 'path'
 import { createHash } from 'crypto'
 import { path7za } from '7zip-bin'
 import { createExtractorFromFile } from 'node-unrar-js'
@@ -192,7 +193,8 @@ async function hashSevenZipEntry(
 }
 
 /** rar：原生 unrar.exe 把条目解压到 stdout，流式哈希（cap 读满即提前终止）。
- *  注意：native unrar 匹配包内路径要求反斜杠分隔（node-unrar-js 列表给的是正斜杠） */
+ *  注意：native unrar 匹配包内路径要求反斜杠分隔（node-unrar-js 列表给的是正斜杠）。
+ *  已弃用：固实卷逐条目解压需重复解压前缀（O(条目×前缀)），改用 extractRarEntries 批量解压。 */
 async function hashRarEntry(
   containerPath: string,
   entryPath: string,
@@ -202,6 +204,65 @@ async function hashRarEntry(
   if (!unrar) return null
   const nativePath = entryPath.replace(/\//g, '\\')
   return hashSpawnStdout(unrar, ['p', '-inul', '-y', containerPath, nativePath], capBytes)
+}
+
+export interface RarExtractResult {
+  /** 成功写出的条目数 */
+  extracted: number
+}
+
+/**
+ * rar 批量解压：一次 unrar x 把一批条目解到临时目录（返回实际写出的条目数）。
+ * 固实卷逐条目解压需要重复解压公共前缀（实测单条 2s × 数千条），批量一次解压
+ * 摊平该成本。解出的文件路径 = tempRoot + '\' + entryPath。
+ */
+export async function extractRarEntries(
+  containerPath: string,
+  entryPaths: string[],
+  tempRoot: string,
+  unrarPath: string | null
+): Promise<number> {
+  const unrar = unrarPath ?? unrarExe()
+  if (!unrar) return 0
+  fs.mkdirSync(tempRoot, { recursive: true })
+  const dest = tempRoot.endsWith('\\') ? tempRoot : tempRoot + '\\'
+  let extracted = 0
+  // 单次 spawn 的参数总长约 32KB 上限，按 60 条/批切分（CJK 路径每条可达数百字节）
+  const CHUNK = 60
+  for (let i = 0; i < entryPaths.length; i += CHUNK) {
+    const chunk = entryPaths.slice(i, i + CHUNK).map((p) => p.replace(/\//g, '\\'))
+    const ok = await new Promise<boolean>((resolve) => {
+      const child = spawn(unrar, ['x', '-y', '-inul', containerPath, ...chunk, dest], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+      let stderr = ''
+      const timer = setTimeout(() => {
+        child.kill()
+        resolve(false)
+      }, 600_000)
+      child.stderr.on('data', (c: Buffer) => (stderr += c.toString('utf8')))
+      child.on('error', () => {
+        clearTimeout(timer)
+        resolve(false)
+      })
+      child.on('exit', (code) => {
+        clearTimeout(timer)
+        resolve(code === 0)
+      })
+      void stderr
+    })
+    if (!ok) continue
+    // 统计实际落盘数（加密/损坏条目可能缺失）
+    for (const rel of chunk) {
+      try {
+        if (fs.statSync(path.join(dest, rel)).isFile()) extracted++
+      } catch {
+        // 缺失条目忽略
+      }
+    }
+  }
+  return extracted
 }
 
 export function hashArchiveEntry(
