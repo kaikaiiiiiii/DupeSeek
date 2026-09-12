@@ -92,14 +92,17 @@ async function listViaEs(esPath: string, target: string): Promise<EverythingList
     '10000'
   ]
   try {
+    // 注意：es 的 DIR 风格属性开关连写（如 -a-d-L）解析不可靠，会漏排目录。
+    // 文件查询用已实测的 -a-d；junction/符号链接目录由引擎侧 lstat 排除
+    //（与 walk 通道语义对齐），目录清单用 -ad 全量返回。
     await runEs(
       esPath,
-      ['-path', target, '-a-d-L', ...layout, '-export-json', outFile],
+      ['-path', target, '-a-d', ...layout, '-export-json', outFile],
       ES_TIMEOUT_MS
     )
     await runEs(
       esPath,
-      ['-path', target, '-ad-L', ...layout, '-export-json', outDir],
+      ['-path', target, '-ad', ...layout, '-export-json', outDir],
       ES_TIMEOUT_MS
     )
     const files = parseRows(fs.readFileSync(outFile, 'utf8'))

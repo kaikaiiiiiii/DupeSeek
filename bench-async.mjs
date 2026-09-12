@@ -24,7 +24,9 @@ function headMd5(p, size) {
   return new Promise((resolve, reject) => {
     const hash = createHash('md5')
     const stream =
-      mode === 'full' ? createReadStream(p) : createReadStream(p, size > HEAD ? { end: HEAD - 1 } : undefined)
+      mode === 'full'
+        ? createReadStream(p)
+        : createReadStream(p, size > HEAD ? { end: HEAD - 1 } : undefined)
     stream.on('data', (c) => hash.update(c))
     stream.on('end', () => resolve(hash.digest('hex')))
     stream.on('error', reject)
