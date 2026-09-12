@@ -1,5 +1,5 @@
-// 基准 A：异步 fs 枚举 + 异步流式 head-1MB md5
-// 用法：node bench-async.mjs <目录> <并发数>
+// 基准 A：异步 fs 枚举 + 异步流式 md5
+// 用法：node bench-async.mjs <目录> <并发数> [head|full] [文件数上限]
 import fs from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -7,6 +7,8 @@ import path from 'node:path'
 
 const root = path.resolve(process.argv[2] ?? '.')
 const concurrency = Number(process.argv[3] ?? 1)
+const mode = process.argv[4] ?? 'head'
+const fileLimit = Number(process.argv[5] ?? Infinity)
 const HEAD = 1024 * 1024
 
 async function walk(dir, out) {
@@ -21,7 +23,8 @@ async function walk(dir, out) {
 function headMd5(p, size) {
   return new Promise((resolve, reject) => {
     const hash = createHash('md5')
-    const stream = createReadStream(p, size > HEAD ? { end: HEAD - 1 } : undefined)
+    const stream =
+      mode === 'full' ? createReadStream(p) : createReadStream(p, size > HEAD ? { end: HEAD - 1 } : undefined)
     stream.on('data', (c) => hash.update(c))
     stream.on('end', () => resolve(hash.digest('hex')))
     stream.on('error', reject)
@@ -31,6 +34,7 @@ function headMd5(p, size) {
 const t0 = performance.now()
 const files = []
 await walk(root, files)
+if (Number.isFinite(fileLimit)) files.length = Math.min(files.length, fileLimit)
 const walkMs = performance.now() - t0
 
 const t1 = performance.now()
@@ -43,7 +47,7 @@ async function worker() {
     try {
       const st = await fs.stat(p)
       await headMd5(p, st.size)
-      bytes += Math.min(st.size, HEAD)
+      bytes += mode === 'full' ? st.size : Math.min(st.size, HEAD)
     } catch {
       failed++
     }
@@ -54,7 +58,7 @@ const hashMs = performance.now() - t1
 
 console.log(
   JSON.stringify({
-    variant: `async x${concurrency}`,
+    variant: `async x${concurrency} ${mode}`,
     files: files.length,
     walkMs: Math.round(walkMs),
     hashMs: Math.round(hashMs),
@@ -63,3 +67,5 @@ console.log(
     failed
   })
 )
+// worker 线程残留会拖住事件循环导致进程不退出，基准打印完直接结束
+process.exit(0)
