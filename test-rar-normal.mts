@@ -58,9 +58,7 @@ function singleEntryMd5(entry: string): Promise<{ ms: number; bytes: number }> {
       bytes += c.length
       hash.update(c)
     })
-    child.on('exit', (code) =>
-      resolve({ ms: Date.now() - t0, bytes: code === 0 ? bytes : -1 })
-    )
+    child.on('exit', (code) => resolve({ ms: Date.now() - t0, bytes: code === 0 ? bytes : -1 }))
     child.on('error', () => resolve({ ms: Date.now() - t0, bytes: -1 }))
   })
 }
@@ -95,11 +93,25 @@ function streamSlice(specs: EntrySpec[]): Promise<{ ok: boolean; count: number; 
         /* 已退出 */
       }
       const expected = specs.reduce((s, e) => s + e.size, 0)
-      console.log('TEMP-DEBUG exit:', JSON.stringify({ exitCode: child.exitCode, totalBytes: total, listingBytes: expected, idx, short: specs.length - idx }))
+      console.log(
+        'TEMP-DEBUG exit:',
+        JSON.stringify({
+          exitCode: child.exitCode,
+          totalBytes: total,
+          listingBytes: expected,
+          idx,
+          short: specs.length - idx
+        })
+      )
       if (idx < specs.length) {
-        for (const sp of specs.slice(idx, idx + 5)) console.log('  缺失起始条目:', JSON.stringify(sp))
+        for (const sp of specs.slice(idx, idx + 5))
+          console.log('  缺失起始条目:', JSON.stringify(sp))
       }
-      resolve({ ok: ok && allBytes && idx === specs.length, count: full.length, ms: Date.now() - t0 })
+      resolve({
+        ok: ok && allBytes && idx === specs.length,
+        count: full.length,
+        ms: Date.now() - t0
+      })
     }
     child.stdout.on('data', (chunk: Buffer) => {
       if (settled) return
@@ -127,7 +139,13 @@ function streamSlice(specs: EntrySpec[]): Promise<{ ok: boolean; count: number; 
 
 async function main(): Promise<void> {
   const specs = await listing()
-  console.log('清单:', specs.length, '条目,', (specs.reduce((s, e) => s + e.size, 0) / 1048576).toFixed(1), 'MB')
+  console.log(
+    '清单:',
+    specs.length,
+    '条目,',
+    (specs.reduce((s, e) => s + e.size, 0) / 1048576).toFixed(1),
+    'MB'
+  )
 
   // 全量流式切片
   const stream = await streamSlice(specs)
