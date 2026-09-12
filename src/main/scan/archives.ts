@@ -102,8 +102,10 @@ async function listSevenZip(containerPath: string): Promise<ArchiveEntryMeta[]> 
 async function listRar(containerPath: string): Promise<ArchiveEntryMeta[]> {
   const ext = await createExtractorFromFile({ filepath: containerPath })
   const headers = [...ext.getFileList().fileHeaders]
+  // node-unrar-js 会把部分目录误报为文件（flags.directory 漏标、size 为目录聚合值），
+  // 需按名称尾部分隔符二次排除
   return headers
-    .filter((h) => !h.flags.directory)
+    .filter((h) => !h.flags.directory && !h.name.endsWith('/') && !h.name.endsWith('\\'))
     .map((h) => ({
       entryPath: h.name,
       size: h.unpSize,
