@@ -284,30 +284,27 @@ export class ScanEngine {
     }
     if (perArchive.size === 0) return tempPaths
 
-    await pMap(
-      [...perArchive.entries()],
-      Math.min(2, perArchive.size),
-      async ([container, entries]) => {
-        if (this.canceled) return
-        const tempRoot = path.join(
-          os.tmpdir(),
-          'dupeseek-rar-' +
-            createHash('md5').update(container.toLowerCase()).digest('hex').slice(0, 12)
-        )
-        this.archiveTempRoots.push(tempRoot)
-        const entryList = [...entries]
-        const ok = await pool.rarExtract('rar', container, entryList, tempRoot)
-        if (!ok) return
-        for (const rel of entryList) {
-          const temp = path.join(tempRoot, rel)
-          try {
-            if (fs.statSync(temp).isFile()) tempPaths.set(`${container}::${rel}`, temp)
-          } catch {
-            // 加密/损坏条目解不出，哈希阶段按独立文件跳过
-          }
+    // 整卷解压（一次 unrar x）比按候选分批快：分批的每批都要从头
+    // 重新解压固实前缀（实测 18 批 42s vs 整卷 12-17s），且无清单编码问题
+    for (const container of perArchive.keys()) {
+      if (this.canceled) return tempPaths
+      const tempRoot = path.join(
+        os.tmpdir(),
+        'dupeseek-rar-' +
+          createHash('md5').update(container.toLowerCase()).digest('hex').slice(0, 12)
+      )
+      this.archiveTempRoots.push(tempRoot)
+      const ok = await pool.rarExtract(container, tempRoot)
+      if (!ok) continue
+      for (const rel of perArchive.get(container) ?? []) {
+        const temp = path.join(tempRoot, rel)
+        try {
+          if (fs.statSync(temp).isFile()) tempPaths.set(`${container}::${rel}`, temp)
+        } catch {
+          // 加密/损坏条目解不出，哈希阶段按独立文件跳过
         }
       }
-    )
+    }
     return tempPaths
   }
 

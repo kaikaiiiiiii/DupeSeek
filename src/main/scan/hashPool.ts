@@ -70,18 +70,12 @@ export class HashPool {
     >
   }
 
-  /** 批量解压 rar 条目到 tempRoot（worker 内执行）；失败返回 false */
-  rarExtract(
-    archiveType: 'rar',
-    archivePath: string,
-    entries: string[],
-    tempRoot: string
-  ): Promise<boolean> {
+  /** 整卷解压 rar 到 tempRoot（worker 内执行）；失败返回 false */
+  rarExtract(archivePath: string, tempRoot: string): Promise<boolean> {
     return this.run({
       kind: 'rar-extract',
-      archiveType,
+      archiveType: 'rar',
       archivePath,
-      entries,
       tempRoot
     }) as Promise<boolean>
   }
