@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { defaultScanDraft } from '../../../shared/defaults'
 import type { ScanProgress, ScanSettings, ScanSummary } from '../../../shared/types'
 import { useDupeStore } from './dupe'
+import { useSettingsStore } from './settings'
 import { useTargetStore } from './target'
 import { useTreeSizeStore } from './treesize'
 import { deepPlain } from '../utils/plain'
@@ -58,6 +59,7 @@ export const useScanStore = defineStore('scan', () => {
     const targets = useTargetStore().targets
     if (targets.length === 0) throw new Error('请先在左侧添加扫描目标')
     draft.value = { ...draft.value, targets: [...targets] }
+    void useSettingsStore().patch({ scanDraft: deepPlain(draft.value) })
     useDupeStore().reset()
     useTreeSizeStore().reset()
     summary.value = null

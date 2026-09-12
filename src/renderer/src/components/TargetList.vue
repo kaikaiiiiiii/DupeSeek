@@ -2,7 +2,7 @@
   <aside
     class="target-list"
     :class="{ droppable: dragOver }"
-    @dragover.prevent="dragOver = true"
+    @dragover.prevent="onDragOver"
     @dragleave="dragOver = false"
     @drop.prevent="onDrop"
   >
@@ -60,11 +60,30 @@ async function addByDialog(): Promise<void> {
   }
 }
 
+/** 应用内拖拽（浏览 Tab 条目）与系统文件拖放统一接收 */
+const INTERNAL_MIME = 'application/x-dupeseek-path'
+
+function onDragOver(ev: DragEvent): void {
+  dragOver.value = true
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy'
+}
+
 async function onDrop(ev: DragEvent): Promise<void> {
   dragOver.value = false
+  const paths: string[] = []
+  // 1) 应用内拖拽：ExplorerRow 拖拽时写入的自定义 MIME（可多行）
+  const internal = ev.dataTransfer?.getData(INTERNAL_MIME) ?? ''
+  if (internal !== '') {
+    paths.push(...internal.split('\n').filter((p) => p !== ''))
+  }
+  // 2) 系统资源管理器拖放：File 对象经 webUtils 换取真实路径
   const files = ev.dataTransfer?.files
-  if (!files || files.length === 0) return
-  const paths = Array.from(files, (f) => window.api.pathForFile(f)).filter((p) => p !== '')
+  if (files) {
+    for (const f of Array.from(files)) {
+      const p = window.api.pathForFile(f)
+      if (p !== '') paths.push(p)
+    }
+  }
   if (paths.length > 0) await targetStore.add(paths)
 }
 

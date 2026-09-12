@@ -1,12 +1,12 @@
 import { parentPort } from 'worker_threads'
 import { md5FullFile, md5HeadFile } from './hash'
 import { isPermissionError } from '../../shared/errors'
-import { hashArchiveEntry, listArchive } from './archives'
+import { extractRarEntries, hashArchiveEntry, listArchive } from './archives'
 import type { ArchiveType } from '../../shared/types'
 
 interface HashJob {
   id: number
-  kind: 'md5-head' | 'md5-full' | 'archive-list' | 'archive-head' | 'archive-full'
+  kind: 'md5-head' | 'md5-full' | 'archive-list' | 'archive-head' | 'archive-full' | 'rar-extract'
   /** md5-head / md5-full */
   path?: string
   cap?: number
@@ -14,6 +14,8 @@ interface HashJob {
   archiveType?: ArchiveType
   archivePath?: string
   entryPath?: string
+  entries?: string[]
+  tempRoot?: string
 }
 
 for (const stream of [process.stdout, process.stderr]) {
@@ -35,6 +37,14 @@ parentPort?.on('message', (job: HashJob) => {
           break
         case 'archive-list':
           value = await listArchive(job.archivePath as string, job.archiveType as ArchiveType)
+          break
+        case 'rar-extract':
+          value = await extractRarEntries(
+            job.archivePath as string,
+            job.entries as string[],
+            job.tempRoot as string,
+            null
+          )
           break
         case 'archive-head':
         case 'archive-full':

@@ -9,7 +9,13 @@ import type { ArchiveEntryMeta } from './archives'
  */
 export const HASH_WORKERS = 4
 
-export type HashJobKind = 'md5-head' | 'md5-full' | 'archive-list' | 'archive-head' | 'archive-full'
+export type HashJobKind =
+  | 'md5-head'
+  | 'md5-full'
+  | 'archive-list'
+  | 'archive-head'
+  | 'archive-full'
+  | 'rar-extract'
 
 interface HashJob {
   kind: HashJobKind
@@ -18,6 +24,8 @@ interface HashJob {
   archiveType?: 'zip' | '7z' | 'rar'
   archivePath?: string
   entryPath?: string
+  entries?: string[]
+  tempRoot?: string
 }
 
 interface QueueItem {
@@ -60,6 +68,22 @@ export class HashPool {
     return this.run({ kind: 'archive-list', archiveType, archivePath }) as Promise<
       ArchiveEntryMeta[] | null
     >
+  }
+
+  /** 批量解压 rar 条目到 tempRoot（worker 内执行）；失败返回 false */
+  rarExtract(
+    archiveType: 'rar',
+    archivePath: string,
+    entries: string[],
+    tempRoot: string
+  ): Promise<boolean> {
+    return this.run({
+      kind: 'rar-extract',
+      archiveType,
+      archivePath,
+      entries,
+      tempRoot
+    }) as Promise<boolean>
   }
 
   /** 解压条目并哈希（cap 限制读取字节数）；失败返回 null */

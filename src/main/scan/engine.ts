@@ -1,5 +1,6 @@
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import type {
   ArchiveType,
@@ -108,6 +109,7 @@ export class ScanEngine {
   private dirs = new Map<string, DirAgg>()
   private rootParents = new Set<string>()
   private denied = 0
+  private archiveTempRoots: string[] = []
 
   constructor(broadcaster: Broadcaster) {
     this.broadcaster = broadcaster
@@ -133,6 +135,7 @@ export class ScanEngine {
     this.bytesHashed = 0
     this.denied = 0
     getHashPool().resetDenied()
+    this.cleanupArchiveTemps()
     this.dirs = new Map()
     // 体积归集的停点：目标目录的父目录（大小只归到目标根为止）
     this.rootParents = new Set(settings.targets.map((t) => path.dirname(t).toLowerCase()))
@@ -184,9 +187,11 @@ export class ScanEngine {
       }
     }
 
-    // 优先 Everything 枚举；未安装 / 未运行 / 单目标失败时逐目标回退 fs walk
-    const lister = await createEverythingLister()
-    console.info(`[scan] 枚举通道：${lister ? 'Everything (es.exe)' : 'fs walk'}`)
+    // 优先 Everything 枚举（可在设置中关闭）；未安装 / 未运行 / 单目标失败时逐目标回退 fs walk
+    const lister = settings.useEverything ? await createEverythingLister() : null
+    console.info(
+      `[scan] 枚举通道：${lister ? 'Everything (es.exe)' : settings.useEverything ? 'fs walk（Everything 不可用）' : 'fs walk（已在设置中禁用 Everything）'}`
+    )
 
     const tick = setInterval(() => {
       this.found = entries.length
@@ -251,6 +256,66 @@ export class ScanEngine {
         this.errors++
       }
     })
+  }
+
+  /**
+   * RAR 批量解压 pass：收集多成员桶内的 rar 条目，按容器分批解到临时目录，
+   * 建立 条目 path → 临时文件 的映射供哈希阶段使用。
+   * 未成功解出的条目保持无映射（哈希阶段按独立文件跳过）。
+   */
+  private async extractRarCandidates(
+    settings: ScanSettings,
+    buckets: Map<string, FileEntry[]>
+  ): Promise<Map<string, string>> {
+    const tempPaths = new Map<string, string>()
+    if (!settings.scanArchives) return tempPaths
+
+    const pool = getHashPool()
+    const perArchive = new Map<string, Set<string>>()
+    for (const bucket of buckets.values()) {
+      if (bucket.length < 2) continue
+      for (const e of bucket) {
+        if (e.archiveType === 'rar' && e.containerPath !== null && e.entryPath !== null) {
+          const set = perArchive.get(e.containerPath)
+          if (set) set.add(e.entryPath)
+          else perArchive.set(e.containerPath, new Set([e.entryPath]))
+        }
+      }
+    }
+    if (perArchive.size === 0) return tempPaths
+
+    await pMap(
+      [...perArchive.entries()],
+      Math.min(2, perArchive.size),
+      async ([container, entries]) => {
+        if (this.canceled) return
+        const tempRoot = path.join(
+          os.tmpdir(),
+          'dupeseek-rar-' +
+            createHash('md5').update(container.toLowerCase()).digest('hex').slice(0, 12)
+        )
+        this.archiveTempRoots.push(tempRoot)
+        const entryList = [...entries]
+        const ok = await pool.rarExtract('rar', container, entryList, tempRoot)
+        if (!ok) return
+        for (const rel of entryList) {
+          const temp = path.join(tempRoot, rel)
+          try {
+            if (fs.statSync(temp).isFile()) tempPaths.set(`${container}::${rel}`, temp)
+          } catch {
+            // 加密/损坏条目解不出，哈希阶段按独立文件跳过
+          }
+        }
+      }
+    )
+    return tempPaths
+  }
+
+  private cleanupArchiveTemps(): void {
+    for (const dir of this.archiveTempRoots) {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+    this.archiveTempRoots = []
   }
 
   /** 用 Everything 枚举一个目录目标；返回 false 表示走不了该通道（如目标是文件） */
@@ -446,6 +511,11 @@ export class ScanEngine {
       else buckets.set(key, [e])
     }
 
+    // RAR 批量解压 pass：多成员桶内的 rar 条目先解到临时目录，
+    // 之后的 head/full 哈希直接读临时文件（固实卷逐条目解压需重复解压公共前缀，
+    // 实测单条 2s × 数千条会拖死整个哈希阶段）
+    const tempPaths = await this.extractRarCandidates(settings, buckets)
+
     // 计数独立于冲刷缓冲：缓冲发出后即清零，总数必须另记
     let count = 0
     let wasted = 0
@@ -472,7 +542,7 @@ export class ScanEngine {
         out.push({ key: `empty:${bucket[0].name}#${bucket.length}`, size: 0, entries: bucket })
         count++
       } else {
-        for (const group of await this.resolveBucket(bucket)) {
+        for (const group of await this.resolveBucket(bucket, tempPaths)) {
           out.push(group)
           count++
           wasted += group.size * (group.entries.length - 1)
@@ -489,7 +559,10 @@ export class ScanEngine {
   }
 
   /** 阶梯比较一个桶，返回其中的全部重复组（可能多于一个） */
-  private async resolveBucket(bucket: FileEntry[]): Promise<DupeGroup[]> {
+  private async resolveBucket(
+    bucket: FileEntry[],
+    tempPaths: Map<string, string>
+  ): Promise<DupeGroup[]> {
     // 纯压缩包条目桶：先用元信息里免费获得的 crc32 初筛——crc 互异的条目对
     // 不可能内容相同，直接淘汰；混有普通文件时 crc 无从比对，整体走完整阶梯
     let sets: FileEntry[][] = [bucket]
@@ -508,9 +581,9 @@ export class ScanEngine {
     const result: DupeGroup[] = []
     for (const set of sets) {
       if (this.canceled) break
-      for (const headGroup of await this.partition(set, 'headmd5')) {
+      for (const headGroup of await this.partition(set, 'headmd5', tempPaths)) {
         if (this.canceled) break
-        for (const fullGroup of await this.partition(headGroup, 'fullmd5')) {
+        for (const fullGroup of await this.partition(headGroup, 'fullmd5', tempPaths)) {
           const md5 = fullGroup[0].fullmd5
           if (md5 === null) continue
           result.push({ key: `md5:${md5}`, size: fullGroup[0].size, entries: fullGroup })
@@ -525,7 +598,11 @@ export class ScanEngine {
    * 普通文件直接哈希；压缩包条目解压到内存后哈希，均提交给 worker 线程池；
    * 失败（null）的条目视为独立文件，不参与分组。
    */
-  private async partition(entries: FileEntry[], slot: HashSlot): Promise<FileEntry[][]> {
+  private async partition(
+    entries: FileEntry[],
+    slot: HashSlot,
+    tempPaths: Map<string, string>
+  ): Promise<FileEntry[][]> {
     const pool = getHashPool()
     // 小文件优化：size ≤ 1MB 时 headMD5 读的已是整个文件，直接复用为 fullMD5，免二次读盘
     if (slot === 'fullmd5') {
@@ -537,7 +614,13 @@ export class ScanEngine {
     }
     const pending = entries.filter((e) => e[slot] === null)
     const hashes = await pMap(pending, HASH_WORKERS, (e) => {
+      // rar：已批量解压到临时目录，直接按文件哈希（免二次解压）
+      const temp = tempPaths.get(e.path)
+      if (temp !== undefined) {
+        return slot === 'headmd5' ? pool.md5Head(temp, HEAD_BYTES) : pool.md5Full(temp)
+      }
       if (e.containerPath !== null && e.entryPath !== null && e.archiveType !== null) {
+        // zip/7z：流式解压哈希
         return pool.archiveMd5(
           e.archiveType,
           e.containerPath,
