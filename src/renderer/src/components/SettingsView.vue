@@ -14,6 +14,18 @@
         勾选时，若 Everything
         正在运行则用其索引枚举文件（未运行自动回退常规遍历）；取消勾选则始终常规遍历。改动即时保存，对下一次扫描生效，不打断进行中的扫描。
       </p>
+      <div class="card-subtitle">压缩包</div>
+      <label class="check-row">
+        <input
+          type="checkbox"
+          :checked="scan.draft.scanArchives"
+          @change="setScanArchives(($event.target as HTMLInputElement).checked)"
+        />
+        解析压缩包内容（zip/7z/rar）
+      </label>
+      <p class="hint">
+        勾选时，压缩包内的文件参与查重（压缩包本身始终作为普通文件参与）；取消勾选则压缩包视作普通文件，只比对包文件本身。改动即时保存，对下一次扫描生效，不打断进行中的扫描。
+      </p>
     </div>
   </div>
 </template>
@@ -28,6 +40,11 @@ const scan = useScanStore()
 /** 即时生效：写入扫描草稿并立刻持久化，下一次扫描开始时生效 */
 function setUseEverything(v: boolean): void {
   scan.draft.useEverything = v
+  void useSettingsStore().patch({ scanDraft: deepPlain(scan.draft) })
+}
+
+function setScanArchives(v: boolean): void {
+  scan.draft.scanArchives = v
   void useSettingsStore().patch({ scanDraft: deepPlain(scan.draft) })
 }
 </script>
@@ -52,6 +69,11 @@ function setUseEverything(v: boolean): void {
 .card-title {
   font-weight: 600;
   margin-bottom: 8px;
+}
+
+.card-subtitle {
+  font-weight: 600;
+  margin: 10px 0 6px;
 }
 
 .check-row {
