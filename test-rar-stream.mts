@@ -110,7 +110,10 @@ function streamSlice(specs: EntrySpec[]): Promise<StreamResult> {
         cur.update(piece)
         // head：只累计每条目前 1MB（不足 1MB 的条目即整条）
         if (headConsumed < Math.min(spec.size, HEAD)) {
-          const hp = piece.subarray(0, Math.min(piece.length, Math.min(spec.size, HEAD) - headConsumed))
+          const hp = piece.subarray(
+            0,
+            Math.min(piece.length, Math.min(spec.size, HEAD) - headConsumed)
+          )
           curHead.update(hp)
           headConsumed += hp.length
         }
@@ -160,7 +163,15 @@ async function main(): Promise<void> {
     .map((h) => ({ name: h.name, size: h.unpSize }))
   const listMs = Date.now() - tList0
   const expected = specs.reduce((s, e) => s + e.size, 0)
-  console.log('清单:', specs.length, '条目,', (expected / 1048576).toFixed(1), 'MB, 头解析', listMs, 'ms')
+  console.log(
+    '清单:',
+    specs.length,
+    '条目,',
+    (expected / 1048576).toFixed(1),
+    'MB, 头解析',
+    listMs,
+    'ms'
+  )
 
   // 2) 方案 B：流式切片双哈希
   const r = await streamSlice(specs)
