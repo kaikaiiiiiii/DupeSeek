@@ -1,7 +1,6 @@
 // 交叉对照：WASM 全量解压 vs 清单 vs 原生 p 流（断点复现性）
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { createHash } from 'node:crypto'
 
 const require_ = createRequire(import.meta.url)
 const UNRAR = 'D:\\Coding\\DupeSeek\\resources\\bin\\UnRAR.exe'
@@ -18,16 +17,11 @@ interface Spec {
 
 function esList(): Promise<Spec[]> {
   return new Promise((resolve) => {
-    const child = spawn('D:\\Coding\\DupeSeek\\resources\\bin\\es.exe', [
-      '-path',
-      'D:\\Coding',
-      '-n',
-      '50000',
-      '-json',
-      '-full-path-and-name',
-      '-size-format',
-      '1'
-    ], { windowsHide: true })
+    const child = spawn(
+      'D:\\Coding\\DupeSeek\\resources\\bin\\es.exe',
+      ['-path', 'D:\\Coding', '-n', '50000', '-json', '-full-path-and-name', '-size-format', '1'],
+      { windowsHide: true }
+    )
     let out = ''
     child.stdout.on('data', (c: Buffer) => (out += c.toString('utf8')))
     child.on('exit', () => {
@@ -95,7 +89,13 @@ function streamSlice(specs: Spec[]): Promise<{ idx: number; total: number; expec
 
 async function main(): Promise<void> {
   const specs = await listing()
-  console.log('清单:', specs.length, '条目,', (specs.reduce((s, e) => s + e.size, 0) / 1048576).toFixed(1), 'MB')
+  console.log(
+    '清单:',
+    specs.length,
+    '条目,',
+    (specs.reduce((s, e) => s + e.size, 0) / 1048576).toFixed(1),
+    'MB'
+  )
 
   // WASM 全量解压：逐条目长度序列 vs 清单长度序列
   const { createExtractorFromFile } = require_('node-unrar-js')
@@ -110,7 +110,15 @@ async function main(): Promise<void> {
     if (n < specs.length && actual !== specs[n].size) sizeMismatch++
     n++
   }
-  console.log('WASM 全量解压条目数:', n, '尺寸不一致:', sizeMismatch, '耗时:', Date.now() - t0, 'ms')
+  console.log(
+    'WASM 全量解压条目数:',
+    n,
+    '尺寸不一致:',
+    sizeMismatch,
+    '耗时:',
+    Date.now() - t0,
+    'ms'
+  )
 
   // 原生 p 断点复现 ×2
   for (let round = 1; round <= 2; round++) {
