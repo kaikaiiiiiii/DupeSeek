@@ -36,11 +36,13 @@ jobs:
       - name: 构建
         run: npm run build
 
-      # Linux 上打包 Windows 目标需要 wine（rcedit 改 exe 资源，官方文档要求）
-      - name: 安装 wine
+      # Linux 上打包 Windows 目标需要 wine；electron-builder 的 rcedit-ia32
+      # 是 32 位程序，需启用 i386 多架构并安装 wine32（见运行器报错提示）
+      - name: 安装 wine（含 32 位支持）
         run: |
+          sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine wine64
+          sudo apt-get install -y wine wine64 wine32:i386
 
       # bash 下 \${version} 转义为字面量传给 electron-builder 的占位符
       # 每次调用只覆盖一个目标（逗号分隔的多目标在 CLI 覆盖里会被当成单个名称）
