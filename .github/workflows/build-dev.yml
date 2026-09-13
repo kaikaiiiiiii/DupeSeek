@@ -37,13 +37,13 @@ jobs:
         run: npm run build
 
       # bash 下 \${version} 转义为字面量传给 electron-builder 的占位符
+      # 每次调用只覆盖一个目标（逗号分隔的多目标在 CLI 覆盖里会被当成单个名称）
       # snap 依赖 snapcraft 且 CI 上易翻车，Linux 目标限定 AppImage + deb
       - name: 打包（Windows NSIS + Linux AppImage/deb，产物名 dupeseek_dev）
-        run: >
-          npx electron-builder --win --linux
-          -c.linux.target=AppImage,deb
-          -c.win.artifactName=dupeseek_dev-setup.\${version}
-          -c.linux.artifactName=dupeseek_dev-\${version}.\${ext}
+        run: |
+          npx electron-builder --win --publish=never -c.win.artifactName=dupeseek_dev-setup.\${version}
+          npx electron-builder --linux --publish=never -c.linux.target=AppImage -c.linux.artifactName=dupeseek_dev-\${version}.AppImage
+          npx electron-builder --linux --publish=never -c.linux.target=deb -c.linux.artifactName=dupeseek_dev-\${version}.deb
 
       - name: 收集产物
         run: |

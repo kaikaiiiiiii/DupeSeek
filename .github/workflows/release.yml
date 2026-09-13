@@ -42,7 +42,7 @@ jobs:
         run: npm run build
 
       - name: 打包（Windows NSIS，产物名 dupeseek-<版本>-setup.exe）
-        run: npx electron-builder --win
+        run: npx electron-builder --win --publish=never
 
       - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v2
