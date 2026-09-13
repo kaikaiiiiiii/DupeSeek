@@ -1,4 +1,5 @@
-# dev 分支自动编译：Windows 安装包，产物名 dupeseek_dev
+# dev 分支自动编译：Linux runner 打包 Windows + Linux 双平台，产物名 dupeseek_dev
+# macOS 无法在 Linux runner 构建（Apple 限制），如需 mac 包后续加 matrix job
 # master 暂无自动编译（按需后续添加）
 name: build-dev
 
@@ -13,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -35,13 +36,24 @@ jobs:
       - name: 构建
         run: npm run build
 
-      - name: 打包（Windows NSIS，产物名 dupeseek_dev）
-        shell: bash
-        run: npx electron-builder --win '-c.artifactName=dupeseek_dev-setup.${ext}'
+      # bash 下 \${version} 转义为字面量传给 electron-builder 的占位符
+      # snap 依赖 snapcraft 且 CI 上易翻车，Linux 目标限定 AppImage + deb
+      - name: 打包（Windows NSIS + Linux AppImage/deb，产物名 dupeseek_dev）
+        run: >
+          npx electron-builder --win --linux
+          -c.linux.target=AppImage,deb
+          -c.win.artifactName=dupeseek_dev-setup.\${version}
+          -c.linux.artifactName=dupeseek_dev-\${version}.\${ext}
 
-      - name: 上传产物
-        uses: actions/upload-artifact@v4
+      - name: 收集产物
+        run: |
+          mkdir -p artifacts
+          find dist -maxdepth 1 -type f \
+            \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) \
+            -exec mv {} artifacts/ \;
+
+      - uses: actions/upload-artifact@v4
         with:
           name: dupeseek_dev
-          path: dist/*.exe
+          path: artifacts/*
           if-no-files-found: error
