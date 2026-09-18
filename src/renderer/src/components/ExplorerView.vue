@@ -1,5 +1,15 @@
 <template>
   <div class="explorer">
+    <div class="path-bar">
+      <input
+        v-model="pathInput"
+        class="input grow"
+        placeholder="输入目录路径后回车"
+        @keyup.enter="go(pathInput)"
+      />
+      <button class="btn primary" @click="go(pathInput)">转到</button>
+    </div>
+
     <div class="toolbar">
       <button class="btn small" :disabled="!canBack" @click="explorer.back()">◀</button>
       <button class="btn small" :disabled="!canForward" @click="explorer.forward()">▶</button>
@@ -80,14 +90,9 @@
       </div>
     </div>
 
-    <div class="path-bar">
-      <input
-        v-model="pathInput"
-        class="input grow"
-        placeholder="输入目录路径后回车"
-        @keyup.enter="go(pathInput)"
-      />
-      <button class="btn primary" @click="go(pathInput)">转到</button>
+    <div class="footer-bar">
+      <span class="footer-tip">拖动条目到左侧列表，或点选后批量添加</span>
+      <button class="btn" @click="emit('open-scan-settings')">扫描设置</button>
     </div>
   </div>
 </template>
@@ -99,6 +104,10 @@ import { useExplorerStore } from '../stores/explorer'
 import { useTargetStore } from '../stores/target'
 import ExplorerRow from './ExplorerRow.vue'
 import VirtualScrollList from './VirtualScrollList.vue'
+
+const emit = defineEmits<{
+  'open-scan-settings': []
+}>()
 
 const explorer = useExplorerStore()
 const targetStore = useTargetStore()
@@ -288,7 +297,23 @@ function openEntry(entry: DirEntry): void {
   display: flex;
   gap: 8px;
   padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.footer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 8px;
   border-top: 1px solid var(--border);
+}
+
+.footer-tip {
+  flex: 1;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .grow {
