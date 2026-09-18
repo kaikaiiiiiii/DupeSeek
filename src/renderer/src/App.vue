@@ -17,7 +17,7 @@
       </nav>
       <div class="tab-content">
         <KeepAlive>
-          <component :is="current" />
+          <component :is="current" @open-scan-settings="activeTab = 'scan'" />
         </KeepAlive>
       </div>
     </div>
