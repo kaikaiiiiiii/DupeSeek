@@ -92,7 +92,9 @@
 
     <div class="footer-bar">
       <span class="footer-tip">拖动条目到左侧列表，或点选后批量添加</span>
-      <button class="btn" @click="emit('open-scan-settings')">扫描设置</button>
+      <button class="btn scan-settings-btn" @click="emit('open-scan-settings')">
+        扫描设置
+      </button>
     </div>
   </div>
 </template>
@@ -314,6 +316,20 @@ function openEntry(entry: DirEntry): void {
   text-align: right;
   color: var(--muted);
   font-size: 12px;
+}
+
+.scan-settings-btn {
+  padding: 8px 24px;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.scan-settings-btn:hover {
+  background: #1d4ed8;
 }
 
 .grow {
