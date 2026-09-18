@@ -31,9 +31,14 @@
     </div>
 
     <div class="footer">
-      <button class="btn primary" :disabled="busy" @click="addByDialog">添加目标</button>
-      <button class="btn" :disabled="targets.length === 0 || busy" @click="clearAll">
-        清空列表
+      <button class="add-btn" title="添加目录" :disabled="busy" @click="addByDialog">＋</button>
+      <button
+        class="clear-btn"
+        title="清空列表"
+        :disabled="targets.length === 0 || busy"
+        @click="clearAll"
+      >
+        🗑
       </button>
     </div>
   </aside>
@@ -175,8 +180,52 @@ async function reveal(path: string): Promise<void> {
 
 .footer {
   display: flex;
+  align-items: center;
   gap: 8px;
   padding: 8px;
   border-top: 1px solid var(--border);
+}
+
+/* 蓝色圆形 + 号：添加目标 */
+.add-btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.add-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 垃圾桶图标按钮：清空列表 */
+.clear-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.clear-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+  color: var(--danger);
+}
+
+.clear-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 </style>
