@@ -26,6 +26,8 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          # semver 需要三段式：v0.4 → 0.4.0（补 .0 直到三段）
+          while [ "$(echo "$VERSION" | awk -F. '{print NF}')" -lt 3 ]; do VERSION="$VERSION.0"; done
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           echo "version=$VERSION" >> "$GITHUB_ENV"
 
