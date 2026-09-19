@@ -1,5 +1,6 @@
 # tag 发布：推送 v* tag 自动编译并直接发布到 GitHub Release
-# 例：git tag v0.4 && git push origin v0.4
+# 例：git tag v0.4.0 && git push origin v0.4.0
+# 与 build-dev 同款 Linux runner + wine 环境；产物三平台（NSIS/AppImage/deb）
 name: release
 
 on:
@@ -11,7 +12,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -43,11 +44,30 @@ jobs:
       - name: 构建
         run: npm run build
 
-      - name: 打包（Windows NSIS，产物名 dupeseek-<版本>-setup.exe）
-        run: npx electron-builder --win --publish=never
+      # Linux 上打包 Windows 目标需要 wine；electron-builder 的 rcedit-ia32
+      # 是 32 位程序，需启用 i386 多架构并安装 wine32（与 build-dev 相同）
+      - name: 安装 wine（含 32 位支持）
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y wine wine64 wine32:i386
+
+      # 每次调用只覆盖一个目标（多目标逗号分隔在 CLI 覆盖里会被当成单个名称）
+      - name: 打包（Windows NSIS + Linux AppImage/deb，dupeseek-<版本>）
+        run: |
+          npx electron-builder --win --publish=never -c.win.artifactName=dupeseek-\${version}-setup.\${ext}
+          npx electron-builder --linux --publish=never -c.linux.target=AppImage -c.linux.artifactName=dupeseek-\${version}.AppImage
+          npx electron-builder --linux --publish=never -c.linux.target=deb -c.linux.artifactName=dupeseek-\${version}.deb
+
+      - name: 收集产物
+        run: |
+          mkdir -p artifacts
+          find dist -maxdepth 1 -type f \
+            \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) \
+            -exec mv {} artifacts/ \;
 
       - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.exe
+          files: artifacts/*
           generate_release_notes: true
