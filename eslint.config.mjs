@@ -36,5 +36,12 @@ export default defineConfig(
       ]
     }
   },
+  {
+    // tools/ 下的纯 JS 基准脚本：无法使用 TS 类型注解，放宽函数返回类型要求
+    files: ['tools/**/*.mjs'],
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off'
+    }
+  },
   eslintConfigPrettier
 )
