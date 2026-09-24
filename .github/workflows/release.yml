@@ -53,9 +53,11 @@ jobs:
           sudo apt-get install -y wine wine64 wine32:i386
 
       # 每次调用只覆盖一个目标（多目标逗号分隔在 CLI 覆盖里会被当成单个名称）
-      - name: 打包（Windows NSIS + Linux AppImage/deb，dupeseek-<版本>）
+      # Windows 双形态：NSIS 安装包 + zip 绿色版
+      - name: 打包（Windows NSIS + zip + Linux AppImage/deb，dupeseek-<版本>）
         run: |
-          npx electron-builder --win --publish=never -c.win.artifactName=dupeseek-\${version}-setup.\${ext}
+          npx electron-builder --win --publish=never -c.win.target=nsis -c.win.artifactName=dupeseek-\${version}-setup.\${ext}
+          npx electron-builder --win --publish=never -c.win.target=zip -c.win.artifactName=dupeseek-\${version}-win.\${ext}
           npx electron-builder --linux --publish=never -c.linux.target=AppImage -c.linux.artifactName=dupeseek-\${version}.AppImage
           npx electron-builder --linux --publish=never -c.linux.target=deb -c.linux.artifactName=dupeseek-\${version}.deb
 
@@ -63,7 +65,7 @@ jobs:
         run: |
           mkdir -p artifacts
           find dist -maxdepth 1 -type f \
-            \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) \
+            \( -name '*.exe' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' \) \
             -exec mv {} artifacts/ \;
 
       - name: 发布到 GitHub Release
