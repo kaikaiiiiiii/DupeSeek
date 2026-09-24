@@ -5,7 +5,7 @@ import eslintPluginVue from 'eslint-plugin-vue'
 import vueParser from 'vue-eslint-parser'
 
 export default defineConfig(
-  { ignores: ['**/node_modules', '**/dist', '**/out', 'cleanDuplicateFiles.v2.js'] },
+  { ignores: ['**/node_modules', '**/dist', '**/out', 'tools/cleanDuplicateFiles.v2.js'] },
   tseslint.configs.recommended,
   eslintPluginVue.configs['flat/recommended'],
   {
