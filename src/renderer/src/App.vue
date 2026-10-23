@@ -60,23 +60,22 @@ onMounted(async () => {
   if (settings.resumeScan) {
     await useSettingsStore().patch({ resumeScan: false })
     try {
-      await useScanStore().start()
+      await useScanStore().rescanAll()
     } catch {
       // 目标为空等启动错误已在扫描页展示
     }
   }
 })
 
-// 目标列表变化（启动恢复 / 添加 / 删除）→ 自动开始扫描；正在扫描时不重复触发
+// 目标列表变化（启动恢复 / 添加 / 删除）→ 自动增量同步；
+// 正在扫描时不重复触发（下次列表变化再纳入）
 watch(
   () => useTargetStore().targets,
-  async (targets) => {
-    const scan = useScanStore()
-    if (targets.length === 0 || scan.status === 'scanning') return
+  async () => {
     try {
-      await scan.start()
+      await useScanStore().syncTargets()
     } catch {
-      // 启动错误已在扫描页展示
+      // 目标为空等启动错误已在扫描页展示
     }
   }
 )

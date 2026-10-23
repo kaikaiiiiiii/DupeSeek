@@ -2,6 +2,7 @@
 // 因此禁止 import electron。
 import { spawn } from 'child_process'
 import fs from 'fs'
+import path from 'path'
 import { createHash } from 'crypto'
 import { path7za } from '7zip-bin'
 import { createExtractorFromFile } from 'node-unrar-js'
@@ -224,6 +225,10 @@ export async function extractWholeRar(
 ): Promise<boolean> {
   const unrar = unrarPath ?? unrarExe()
   if (!unrar) return false
+  // 跨操作复用：完整解压过的临时目录带完成标记，直接跳过
+  const marker = path.join(tempRoot, '.dupeseek-complete')
+  if (fs.existsSync(marker)) return true
+  fs.rmSync(tempRoot, { recursive: true, force: true })
   fs.mkdirSync(tempRoot, { recursive: true })
   const dest = tempRoot.endsWith('\\') ? tempRoot : tempRoot + '\\'
   return new Promise((resolve) => {
@@ -243,7 +248,9 @@ export async function extractWholeRar(
     })
     child.on('exit', (code) => {
       clearTimeout(timer)
-      resolve(code === 0)
+      const ok = code === 0
+      if (ok) fs.writeFileSync(marker, 'ok')
+      resolve(ok)
     })
     void stderr
   })

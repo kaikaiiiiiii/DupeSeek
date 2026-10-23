@@ -17,7 +17,8 @@
 | :--- | :--- | :--- | :--- |
 | `dialog:select-targets` | `{ kind: 'dir' \| 'file' \| 'both' }` | `string[] \| null` | 系统多选对话框；取消返回 null |
 | `fs:reveal` | `path: string` | `void` | 在系统资源管理器中显示该条目（TargetList 放大镜图标） |
-| `scan:start` | `ScanSettings` | `sessionId: string` | 异步启动扫描会话；进度经事件回流。设置非法（如 targets 为空）reject |
+| `scan:sync` | `ScanSettings` | `ScanSummary` | 目标列表同步（增量）：引擎 diff 目标集合——新增目标枚举+与现有条目比桶（现有条目哈希记忆化保留，不重复读盘），移除目标纯内存清理；返回全量汇总。targets 为空 reject |
+| `scan:rescan` | `ScanSettings` | `ScanSummary` | 清空引擎会话状态后整体重扫 |
 | `scan:stop` | `sessionId: string` | `void` | 协作式取消：主进程尽快停止，已算出的结果照常回流 |
 | `everything:detect` | — | `EverythingStatus` | 检测 Everything 是否可用 |
 | `clean:run` | `CleanAction` | `CleanReport` | 执行删除/硬链接/合并移动；执行前由渲染层负责确认弹窗 |
@@ -52,7 +53,8 @@ interface DupeSeekApi {
   selectTargets(kind: 'dir' | 'file' | 'both'): Promise<string[] | null>
   reveal(path: string): Promise<void>
   pathForFile(file: File): string
-  scanStart(settings: ScanSettings): Promise<string>
+  scanSync(settings: ScanSettings): Promise<ScanSummary>
+  scanRescan(settings: ScanSettings): Promise<ScanSummary>
   scanStop(sessionId: string): void
   cleanRun(action: CleanAction): Promise<CleanReport>
   getSettings(): Promise<AppSettings>

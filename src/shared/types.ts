@@ -117,7 +117,10 @@ export interface DupeSeekApi {
   selectTargets(kind: 'dir' | 'file' | 'both'): Promise<string[] | null>
   reveal(path: string): Promise<void>
   pathForFile(file: File): string
-  scanStart(settings: ScanSettings): Promise<string>
+  /** 目标列表同步：新增目标增量扫描，移除目标纯内存清理 */
+  scanSync(settings: ScanSettings): Promise<ScanSummary>
+  /** 清空会话状态后整体重扫 */
+  scanRescan(settings: ScanSettings): Promise<ScanSummary>
   scanStop(sessionId: string): void
   cleanRun(action: CleanAction): Promise<CleanReport>
   /** 请求 UAC 提权并以管理员身份重启（保存现场后自动续扫）；返回是否成功拉起 */

@@ -18,6 +18,8 @@ export const useScanStore = defineStore('scan', () => {
   const summary = ref<ScanSummary | null>(null)
   /** 各扫描目标的独立进度（0-100）；扫描正常结束后完成的目标保持 100 */
   const targetProgress = ref<Record<string, number>>({})
+  /** 已同步到引擎的目标集合（增量 diff 的基准） */
+  const syncedTargets = ref<string[]>([])
   const error = ref('')
 
   function initDraft(saved: ScanSettings): void {
@@ -51,10 +53,11 @@ export const useScanStore = defineStore('scan', () => {
     adopt(s.sessionId)
     summary.value = s
     status.value = 'done'
-    // 正常完成的扫描：各目标进度条保持满格；被取消的保留最后实际进度
+    syncedTargets.value = [...useTargetStore().targets]
+    // 正常完成：各目标进度条保持满格；被取消的保留最后实际进度
     if (!s.canceled) {
       const next = { ...targetProgress.value }
-      for (const t of progress.value?.targets ?? []) next[t.path] = 100
+      for (const t of syncedTargets.value) next[t] = 100
       targetProgress.value = next
     }
     useDupeStore().markScanDone()
@@ -67,22 +70,77 @@ export const useScanStore = defineStore('scan', () => {
     status.value = 'error'
   })
 
-  async function start(): Promise<void> {
+  /**
+   * 目标列表同步（增量）：新增目标增量扫描并与现有条目比桶；
+   * 移除目标纯内存清理（无磁盘 I/O）。现有条目的哈希记忆化全部保留。
+   */
+  async function syncTargets(): Promise<void> {
     if (status.value === 'scanning') return
     const targets = useTargetStore().targets
     if (targets.length === 0) throw new Error('请先在左侧添加扫描目标')
+
+    // 移除目标的乐观内存清理（引擎侧同步做同样的清理）
+    const removed = syncedTargets.value.filter((t) => !targets.includes(t))
+    if (removed.length > 0) useDupeStore().purgeTargets(removed)
+
+    // 进度条：新目标归零，未变目标保留（已完成的保持满格），移除的剔除
+    const next: Record<string, number> = {}
+    for (const t of targets) {
+      next[t] = syncedTargets.value.includes(t) ? (targetProgress.value[t] ?? 0) : 0
+    }
+    targetProgress.value = next
+
     draft.value = { ...draft.value, targets: [...targets] }
     void useSettingsStore().patch({ scanDraft: deepPlain(draft.value) })
-    useDupeStore().reset()
-    useTreeSizeStore().reset()
     summary.value = null
     progress.value = null
-    targetProgress.value = {}
     error.value = ''
     sessionId.value = ''
     status.value = 'scanning'
     try {
-      sessionId.value = await window.api.scanStart(deepPlain(draft.value))
+      summary.value = await window.api.scanSync(deepPlain(draft.value))
+      syncedTargets.value = [...targets]
+      if (!summary.value.canceled) {
+        const full = { ...targetProgress.value }
+        for (const t of targets) full[t] = 100
+        targetProgress.value = full
+      }
+      status.value = 'done'
+      useTreeSizeStore().setTree(summary.value.tree)
+    } catch (err) {
+      status.value = 'error'
+      error.value = err instanceof Error ? err.message : String(err)
+      throw err
+    }
+  }
+
+  /** 整体重扫：清空引擎会话状态与全部结果后按当前目标全量扫描 */
+  async function rescanAll(): Promise<void> {
+    if (status.value === 'scanning') return
+    const targets = useTargetStore().targets
+    if (targets.length === 0) throw new Error('请先在左侧添加扫描目标')
+
+    useDupeStore().reset()
+    useTreeSizeStore().reset()
+    syncedTargets.value = []
+    targetProgress.value = {}
+    draft.value = { ...draft.value, targets: [...targets] }
+    void useSettingsStore().patch({ scanDraft: deepPlain(draft.value) })
+    summary.value = null
+    progress.value = null
+    error.value = ''
+    sessionId.value = ''
+    status.value = 'scanning'
+    try {
+      summary.value = await window.api.scanRescan(deepPlain(draft.value))
+      syncedTargets.value = [...targets]
+      if (!summary.value.canceled) {
+        const full = { ...targetProgress.value }
+        for (const t of targets) full[t] = 100
+        targetProgress.value = full
+      }
+      status.value = 'done'
+      useTreeSizeStore().setTree(summary.value.tree)
     } catch (err) {
       status.value = 'error'
       error.value = err instanceof Error ? err.message : String(err)
@@ -101,9 +159,11 @@ export const useScanStore = defineStore('scan', () => {
     progress,
     summary,
     targetProgress,
+    syncedTargets,
     error,
     initDraft,
-    start,
+    syncTargets,
+    rescanAll,
     stop
   }
 })

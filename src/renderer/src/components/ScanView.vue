@@ -231,7 +231,7 @@ async function startScan(): Promise<void> {
   scan.draft.extBlacklist = parseExtList(blacklistText.value)
   scan.draft.extWhitelist = parseExtList(whitelistText.value)
   try {
-    await scan.start()
+    await scan.rescanAll()
   } catch {
     // 错误已写入 scan.error 展示
   }

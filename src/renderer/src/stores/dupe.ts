@@ -41,14 +41,48 @@ export const useDupeStore = defineStore('dupe', () => {
     })
   )
 
+  /** 增量同步语义：按 key 幂等——同 key 的组整组替换（成员可能增加），
+   *  id 保持稳定以保留选择状态；既有保留项若仍在组内则沿用 */
   function appendGroups(list: DupeGroup[]): void {
     for (const g of list) {
-      const view: DupeGroupView = { ...g, id: nextId++ }
-      groups.value = [...groups.value, view]
-      if (!keepChoice.value[view.id]) {
-        keepChoice.value = { ...keepChoice.value, [view.id]: defaultKeep(view) }
+      const idx = groups.value.findIndex((x) => x.key === g.key)
+      if (idx >= 0) {
+        const id = groups.value[idx].id
+        const view: DupeGroupView = { ...g, id }
+        groups.value.splice(idx, 1, view)
+        if (!g.entries.some((e) => e.path === keepChoice.value[id])) {
+          keepChoice.value = { ...keepChoice.value, [id]: defaultKeep(view) }
+        }
+      } else {
+        const id = nextId++
+        const view: DupeGroupView = { ...g, id }
+        groups.value = [...groups.value, view]
+        keepChoice.value = { ...keepChoice.value, [id]: defaultKeep(view) }
       }
     }
+  }
+
+  /** 移除目标后的内存清理：剔除其成员（含包内条目），不足 2 个的组解散。
+   *  纯内存操作，零磁盘 I/O。 */
+  function purgeTargets(prefixes: string[]): void {
+    if (prefixes.length === 0) return
+    const isRemoved = (e: FileEntry): boolean => {
+      const root = (e.containerPath ?? e.path).toLowerCase()
+      return prefixes.some((p) => {
+        const lp = p.toLowerCase()
+        return root === lp || root.startsWith(lp + '\\')
+      })
+    }
+    const keptGroups = groups.value
+      .map((g) => ({ ...g, entries: g.entries.filter((e) => !isRemoved(e)) }))
+      .filter((g) => g.entries.length >= 2)
+    const nextKeep: Record<number, string> = {}
+    for (const g of keptGroups) {
+      const keep = keepChoice.value[g.id]
+      nextKeep[g.id] = keep && g.entries.some((e) => e.path === keep) ? keep : defaultKeep(g)
+    }
+    groups.value = keptGroups
+    keepChoice.value = nextKeep
   }
 
   /** 扫描结束信号；用于将来刷新统计，当前仅保留扩展点 */
@@ -134,6 +168,7 @@ export const useDupeStore = defineStore('dupe', () => {
     totalWasted,
     visibleGroups,
     appendGroups,
+    purgeTargets,
     markScanDone,
     setKeep,
     applyKeepRule,
