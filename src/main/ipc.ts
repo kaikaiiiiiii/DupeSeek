@@ -33,7 +33,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   ipcMain.handle('fs:reveal', (_e, p: string) => shell.showItemInFolder(p))
 
-  ipcMain.handle('scan:start', async (_e, settings: ScanSettings) => engine.start(settings))
+  ipcMain.handle('scan:sync', async (_e, settings: ScanSettings) => engine.syncTargets(settings))
+  ipcMain.handle('scan:rescan', async (_e, settings: ScanSettings) => engine.rescanAll(settings))
   ipcMain.on('scan:stop', () => engine.stop())
 
   ipcMain.handle('clean:run', (_e, action: CleanAction) => runClean(action))
