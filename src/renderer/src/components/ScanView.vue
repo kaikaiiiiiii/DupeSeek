@@ -67,7 +67,7 @@
           :disabled="targets.length === 0"
           @click="startScan"
         >
-          开始扫描（{{ targets.length }} 个目标）
+          重新扫描（{{ targets.length }} 个目标）
         </button>
         <button v-else class="btn danger" @click="scan.stop()">停止扫描</button>
       </div>

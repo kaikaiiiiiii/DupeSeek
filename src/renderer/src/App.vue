@@ -56,10 +56,9 @@ onMounted(async () => {
   useScanStore().initDraft(settings.scanDraft)
   useDupeStore().reset()
 
-  // 提权重启后的自动续扫：消费一次性标记，切到扫描页并重扫
+  // 提权重启后的自动续扫：消费一次性标记并重扫
   if (settings.resumeScan) {
     await useSettingsStore().patch({ resumeScan: false })
-    activeTab.value = 'scan'
     try {
       await useScanStore().start()
     } catch {
@@ -74,7 +73,6 @@ watch(
   async (targets) => {
     const scan = useScanStore()
     if (targets.length === 0 || scan.status === 'scanning') return
-    activeTab.value = 'scan'
     try {
       await scan.start()
     } catch {
