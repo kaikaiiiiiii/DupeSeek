@@ -57,6 +57,8 @@ export interface ScanProgress {
   percent: number
   /** 累计遇到的权限不足（EACCES/EPERM）条数，>0 时 UI 提示可提权重扫 */
   denied: number
+  /** 各扫描目标的独立进度（枚举期 total 渐增，哈希期按条目计） */
+  targets: Array<{ path: string; percent: number }>
 }
 
 export interface ScanSummary {
