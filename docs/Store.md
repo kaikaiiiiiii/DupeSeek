@@ -2,7 +2,7 @@
 
 > v0.2（2026-09-12）。类型引用见 [DataModel.md](./DataModel.md)，通道定义见 [IPC.md](./IPC.md)。
 >
-> **实现状态**：settings / target / explorer / scan / dupe / treesize 六个 store 已落地（`src/renderer/src/stores/`）。
+> **实现状态**：settings / target / scan / dupe / treesize 五个 store 已落地（`src/renderer/src/stores/`）。
 >
 > 原则：组件之间不直接传数据，一律通过 store；渲染层不持有任何 fs 状态的"私有副本"。store 只存轻量引用与大列表的不可变数组，重列表渲染交给虚拟滚动（virtua VList，封装见 `VirtualScrollList.vue`）。
 
@@ -12,7 +12,6 @@
 | :----------------- | :------------------------------------ | :-------------------- |
 | `useSettingsStore` | 全局设置、Everything 可用状态         | JSON 文件（经 IPC）   |
 | `useTargetStore`   | 扫描目标列表                          | 随设置持久化（⚠️ D4） |
-| `useExplorerStore` | Explorer 当前目录、导航历史、目录条目 | 否                    |
 | `useScanStore`     | 扫描设置草稿、扫描状态机、进度        | 否                    |
 | `useDupeStore`     | 重复组集合、筛选、选择器、清理执行    | 否（结果缓存后置）    |
 | `useTreeSizeStore` | 目录体积树、展开/聚焦状态             | 否                    |
@@ -42,22 +41,7 @@ actions: {
 
 扫描中允许增删目标（旧 TargetList.md 明确此行为）；已开始的会话不受影响，仅影响下一次 `scan:start`。
 
-## 4. useExplorerStore
-
-```ts
-state: {
-  cwd: string
-  entries: DirEntry[]
-  loading: boolean
-  history: string[]     // 后退/前进双栈可用 cwd 单栈 + 游标实现
-  cursor: number
-}
-actions: { open(path), up(), back(), forward(), refresh() }
-```
-
-`open` 调 `fs:list`；目录条目在 Explorer 内用虚拟滚动渲染，不在此层做排序缓存。
-
-## 5. useScanStore
+## 4. useScanStore
 
 ```ts
 state: {
@@ -83,7 +67,7 @@ scanning ──scan:stop──▶ scanning（等待 scan:done，summary.canceled
 
 `start` 前置校验：targets 非空；`sessionId` 每轮新生成，事件订阅侧负责丢弃过期包。
 
-## 6. useDupeStore
+## 5. useDupeStore
 
 ```ts
 state: {
@@ -115,7 +99,7 @@ interface SelectorRule {
 
 **压缩包条目清理限制**：delete 对压缩包内条目无意义（只能整包删除），DupeList 中此类条目置灰、不进入 removePaths；扫描结果里它仍然参与判重与展示。
 
-## 7. useTreeSizeStore
+## 6. useTreeSizeStore
 
 ```ts
 state: {
@@ -127,7 +111,7 @@ actions: { buildFromGroups() 或 buildFromScanMeta(), toggle(path), focus(path) 
 
 树数据来源于扫描会话的目录聚合统计（主进程在 listing 阶段顺带产出，避免渲染层重算）。
 
-## 8. 模块位置与命名
+## 7. 模块位置与命名
 
-- `src/renderer/src/stores/` 下每 store 一个文件：`settings.ts`、`target.ts`、`explorer.ts`、`scan.ts`、`dupe.ts`、`treesize.ts`。
+- `src/renderer/src/stores/` 下每 store 一个文件：`settings.ts`、`target.ts`、`scan.ts`、`dupe.ts`、`treesize.ts`。
 - 一律 `defineStore('xxx', () => { ... })` setup 风格，类型使用 interface（见 Agents.local.md）。

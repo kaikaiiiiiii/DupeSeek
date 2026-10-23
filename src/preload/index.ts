@@ -19,8 +19,6 @@ function plainJson<T>(value: T): T {
 
 const api: DupeSeekApi = {
   selectTargets: (kind) => ipcRenderer.invoke('dialog:select-targets', kind),
-  listDir: (path) => ipcRenderer.invoke('fs:list', path),
-  places: () => ipcRenderer.invoke('fs:places'),
   reveal: (path) => ipcRenderer.invoke('fs:reveal', path),
   pathForFile: (file) => webUtils.getPathForFile(file),
   scanStart: (settings) => ipcRenderer.invoke('scan:start', plainJson(settings)),

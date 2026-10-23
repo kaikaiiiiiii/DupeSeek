@@ -101,26 +101,9 @@ export interface CleanReport {
   freedBytes: number
 }
 
-export interface DirEntry {
-  name: string
-  path: string
-  isDir: boolean
-  size: number
-  mtime: number
-  class: string
-}
-
-export interface FavoriteItem {
-  label: string
-  path: string
-  builtin: boolean
-}
-
 export interface AppSettings {
   /** 上次的目标列表 */
   targets: string[]
-  /** 用户收藏目录（预置项由主进程给出，不在此持久化） */
-  favorites: FavoriteItem[]
   /** 上次的扫描表单草稿 */
   scanDraft: ScanSettings
   /** 提权重启后自动续扫的一次性标记 */
@@ -130,8 +113,6 @@ export interface AppSettings {
 /** 渲染层通过 preload 可用的 API，定义见 docs/IPC.md */
 export interface DupeSeekApi {
   selectTargets(kind: 'dir' | 'file' | 'both'): Promise<string[] | null>
-  listDir(path: string): Promise<DirEntry[]>
-  places(): Promise<{ favorites: FavoriteItem[]; drives: FavoriteItem[] }>
   reveal(path: string): Promise<void>
   pathForFile(file: File): string
   scanStart(settings: ScanSettings): Promise<string>
