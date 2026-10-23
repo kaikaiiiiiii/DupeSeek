@@ -32,16 +32,20 @@
         </div>
       </template>
     </VirtualScrollList>
-    <div v-else class="empty">暂无数据——先到「扫描」页运行一次扫描</div>
+    <div v-else class="empty">
+      {{ scan.status === 'scanning' ? '正在扫描，体积树将在扫描完成后生成…' : '左侧添加扫描目标后自动开始分析' }}
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useScanStore } from '../stores/scan'
 import { useTreeSizeStore, type TreeRow } from '../stores/treesize'
 import { formatBytes } from '../utils/format'
 import VirtualScrollList from './VirtualScrollList.vue'
 
 const treesize = useTreeSizeStore()
+const scan = useScanStore()
 </script>
 
 <style scoped>
