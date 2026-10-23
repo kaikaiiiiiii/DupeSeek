@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import DupeList from './components/DupeList.vue'
 import ScanView from './components/ScanView.vue'
 import SettingsView from './components/SettingsView.vue'
@@ -67,6 +67,21 @@ onMounted(async () => {
     }
   }
 })
+
+// 目标列表变化（启动恢复 / 添加 / 删除）→ 自动开始扫描；正在扫描时不重复触发
+watch(
+  () => useTargetStore().targets,
+  async (targets) => {
+    const scan = useScanStore()
+    if (targets.length === 0 || scan.status === 'scanning') return
+    activeTab.value = 'scan'
+    try {
+      await scan.start()
+    } catch {
+      // 启动错误已在扫描页展示
+    }
+  }
+)
 </script>
 
 <style scoped>
