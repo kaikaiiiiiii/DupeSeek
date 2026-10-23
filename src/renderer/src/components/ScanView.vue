@@ -276,7 +276,7 @@ async function startScan(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0 4px 20px;
+  padding: 4px 0;
 }
 
 .input.num {
