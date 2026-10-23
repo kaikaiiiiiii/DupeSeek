@@ -158,7 +158,7 @@ export class ScanEngine {
   }
 
   /** 目标列表同步：新增目标增量扫描，移除目标纯内存清理 */
-  async syncTargets(settings: ScanSettings): Promise<string> {
+  async syncTargets(settings: ScanSettings): Promise<ScanSummary> {
     if (this.running) throw new Error('已有扫描任务在进行中')
     if (settings.targets.length === 0) throw new Error('请先添加扫描目标')
 
@@ -229,7 +229,8 @@ export class ScanEngine {
         tree
       }
       this.broadcaster('scan:done', summary)
-      return sessionId
+      // 渲染层 invoke 路径直接消费 summary（事件路径可能被状态守卫拦截）
+      return summary
     } finally {
       this.running = false
       this.canceled = false
@@ -237,7 +238,7 @@ export class ScanEngine {
   }
 
   /** 整体重扫：清空会话状态后按当前目标全量扫描 */
-  async rescanAll(settings: ScanSettings): Promise<string> {
+  async rescanAll(settings: ScanSettings): Promise<ScanSummary> {
     if (this.running) throw new Error('已有扫描任务在进行中')
     this.targetEntries.clear()
     this.knownGroups.clear()

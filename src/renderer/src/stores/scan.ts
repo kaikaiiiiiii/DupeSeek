@@ -100,15 +100,18 @@ export const useScanStore = defineStore('scan', () => {
     sessionId.value = ''
     status.value = 'scanning'
     try {
-      summary.value = await window.api.scanSync(deepPlain(draft.value))
+      const done = await window.api.scanSync(deepPlain(draft.value))
+      if (done && typeof done === 'object') summary.value = done
       syncedTargets.value = [...targets]
-      if (!summary.value.canceled) {
+      if (!summary.value?.canceled) {
         const full = { ...targetProgress.value }
         for (const t of targets) full[t] = 100
         targetProgress.value = full
       }
       status.value = 'done'
-      useTreeSizeStore().setTree(summary.value.tree)
+      if (Array.isArray(summary.value?.tree)) {
+        useTreeSizeStore().setTree(summary.value.tree)
+      }
     } catch (err) {
       status.value = 'error'
       error.value = err instanceof Error ? err.message : String(err)
@@ -134,15 +137,18 @@ export const useScanStore = defineStore('scan', () => {
     sessionId.value = ''
     status.value = 'scanning'
     try {
-      summary.value = await window.api.scanRescan(deepPlain(draft.value))
+      const done = await window.api.scanRescan(deepPlain(draft.value))
+      if (done && typeof done === 'object') summary.value = done
       syncedTargets.value = [...targets]
-      if (!summary.value.canceled) {
+      if (!summary.value?.canceled) {
         const full = { ...targetProgress.value }
         for (const t of targets) full[t] = 100
         targetProgress.value = full
       }
       status.value = 'done'
-      useTreeSizeStore().setTree(summary.value.tree)
+      if (Array.isArray(summary.value?.tree)) {
+        useTreeSizeStore().setTree(summary.value.tree)
+      }
     } catch (err) {
       status.value = 'error'
       error.value = err instanceof Error ? err.message : String(err)
