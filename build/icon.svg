@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- DupeSeek 图标：两份重叠文件（重复）+ 放大镜（查找） -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#1E3A8A"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DBEAFE"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 圆角方形底 -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
+
+  <!-- 后面的文件（深一点的纸） -->
+  <g transform="translate(58 30) rotate(8 64 84)">
+    <path d="M14 0 h68 l34 34 v118 a14 14 0 0 1 -14 14 H14 A14 14 0 0 1 0 152 V14 A14 14 0 0 1 14 0 Z"
+          fill="#93C5FD"/>
+    <path d="M82 0 l34 34 H96 A14 14 0 0 1 82 20 Z" fill="#60A5FA"/>
+  </g>
+
+  <!-- 前面的文件 -->
+  <g transform="translate(30 52)">
+    <path d="M14 0 h68 l34 34 v118 a14 14 0 0 1 -14 14 H14 A14 14 0 0 1 0 152 V14 A14 14 0 0 1 14 0 Z"
+          fill="url(#paper)"/>
+    <path d="M82 0 l34 34 H96 A14 14 0 0 1 82 20 Z" fill="#93C5FD"/>
+    <!-- 文件上的内容线 -->
+    <rect x="22" y="58" width="72" height="10" rx="5" fill="#93C5FD"/>
+    <rect x="22" y="82" width="72" height="10" rx="5" fill="#BFDBFE"/>
+    <rect x="22" y="106" width="48" height="10" rx="5" fill="#BFDBFE"/>
+  </g>
+
+  <!-- 放大镜（右下压在两份文件上） -->
+  <g>
+    <circle cx="172" cy="168" r="52" fill="#FFFFFF" fill-opacity="0.18"/>
+    <circle cx="172" cy="168" r="52" fill="none" stroke="#FFFFFF" stroke-width="14"/>
+    <!-- 镜片内的重复标记：两个小点 = 两份相同 -->
+    <circle cx="158" cy="168" r="12" fill="#FFFFFF"/>
+    <circle cx="188" cy="168" r="12" fill="#FFFFFF"/>
+    <line x1="210" y1="206" x2="240" y2="236" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round"/>
+  </g>
+</svg>
