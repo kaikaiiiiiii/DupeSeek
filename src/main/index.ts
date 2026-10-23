@@ -33,6 +33,9 @@ function argValue(flag: string): string | undefined {
 }
 const handoverPid = Number(argValue('--handover-pid'))
 
+// 扫描枚举需要真实文件系统语义：.asar 是普通文件而非虚拟目录
+process.noAsar = true
+
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1200,
