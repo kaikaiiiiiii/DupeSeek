@@ -38,9 +38,10 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     return out
   })
 
-  function setTree(t: ScanTreeNode[]): void {
+  function setTree(t: ScanTreeNode[], keepExpanded = false): void {
     tree.value = t
-    expanded.value = new Set()
+    // 渐进更新（扫描中每秒一次）保留展开状态；整树替换（新一轮扫描）重置
+    if (!keepExpanded) expanded.value = new Set()
   }
 
   function toggle(path: string): void {

@@ -42,6 +42,8 @@ export const useScanStore = defineStore('scan', () => {
       for (const t of p.targets) next[t.path] = t.percent
       targetProgress.value = next
     }
+    // 渐进体积树（约 1s 一次）：扫描期间空间分析同步生长，保留展开状态
+    if (p.tree) useTreeSizeStore().setTree(p.tree, true)
   })
   window.api.onScanGroup((p) => {
     if (status.value !== 'scanning') return

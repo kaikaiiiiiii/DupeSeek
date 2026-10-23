@@ -124,6 +124,7 @@ export class ScanEngine {
   private foundPerTarget = new Map<string, number>()
   private processedPerTarget = new Map<string, number>()
   private progressTargets: string[] = []
+  private lastTreeAt = 0
 
   // —— 持久会话状态 ——
   private targetEntries = new Map<string, FileEntry[]>()
@@ -186,6 +187,10 @@ export class ScanEngine {
         this.processedPerTarget.delete(t)
       }
       this.purgeGroupsByTargets(removeList)
+      // 渐进树基线：先按（清理后的）既有条目重建一次并立刻推送，
+      // 让"移除目标"的体积变化即时可见
+      this.lastTreeAt = 0
+      this.emitProgressiveTree(true)
 
       // 新增：枚举 → 触碰桶比较（只有 L0 同桶的新条目触发哈希）
       if (addList.length > 0) {
@@ -377,10 +382,12 @@ export class ScanEngine {
           entries: bucket
         }
         this.knownGroups.set(group.key, group)
+        this.attributeDupToDirs(group, settings.targets)
         out.push(group)
       } else {
         for (const group of await this.resolveBucket(bucket, tempPaths)) {
           this.knownGroups.set(group.key, group)
+          this.attributeDupToDirs(group, settings.targets)
           out.push(group)
         }
       }
@@ -388,6 +395,20 @@ export class ScanEngine {
       if (out.length >= GROUP_FLUSH_COUNT || Date.now() - lastFlush >= GROUP_FLUSH_MS) flush()
     }
     flush()
+  }
+
+  /** 组确认后把重复占用计入渐进树（哈希期增量归集，与 rebuildDirs 第3步同语义） */
+  private attributeDupToDirs(group: DupeGroup, targets: string[]): void {
+    const kept = group.entries.reduce((a, b) => (a.mtime <= b.mtime ? a : b))
+    for (const e of group.entries) {
+      if (e.path === kept.path) continue
+      if (e.containerPath !== null && e.entryPath !== null) {
+        this.addArchiveBytes(e.containerPath, e.entryPath, e.size, true)
+      } else {
+        const t = this.targetOf(e, targets)
+        this.addBytes(e.path, e.size, true, t ?? '')
+      }
+    }
   }
 
   private l0Key(e: FileEntry, settings: ScanSettings): string {
@@ -507,15 +528,56 @@ export class ScanEngine {
         fullmd5: null
       }
       entries.push(entry)
+      // 渐进体积树：登记祖先目录并累加体积（与 rebuildDirs 同语义的增量版）
+      this.addEntryToDirs(entry, target)
       lastPath.value = f.filename
     }
     return true
+  }
+
+  /** 增量登记一个条目的目录链与体积（渐进树用；与 rebuildDirs 语义一致） */
+  private addEntryToDirs(e: FileEntry, target: string): void {
+    const stop = target.toLowerCase()
+    if (e.containerPath !== null && e.entryPath !== null) {
+      const root = e.containerPath + '::'
+      this.recordDirAt(root, path.dirname(e.containerPath), path.basename(e.containerPath))
+      const segs = e.entryPath.split(/[\\/]/)
+      let p = root
+      for (let i = 0; i < segs.length - 1; i++) {
+        const next = p + '/' + segs[i]
+        this.recordDirAt(next, p, segs[i])
+        p = next
+      }
+      this.addArchiveBytes(e.containerPath, e.entryPath, e.size, false)
+    } else {
+      this.recordDir(target)
+      let p = path.dirname(e.path)
+      for (;;) {
+        const lp = p.toLowerCase()
+        if (lp === stop || !lp.startsWith(stop + '\\')) break
+        this.recordDir(p)
+        const parent = path.dirname(p)
+        if (parent === p) break
+        p = parent
+      }
+      this.addBytes(e.path, e.size, false, target)
+    }
+  }
+
+  /** 渐进体积树：节流 1s 重建一次（纯内存操作），挂在 progress 事件回流；
+   *  force 跳过节流立即推送（如移除目标后的基线） */
+  private emitProgressiveTree(force = false): ScanTreeNode[] | undefined {
+    const now = Date.now()
+    if (!force && now - this.lastTreeAt < 1000) return undefined
+    this.lastTreeAt = now
+    return this.buildTreeFrom(this.dirs)
   }
 
   private emitProgress(currentPath: string): void {
     const now = Date.now()
     if (now - this.lastProgressAt < PROGRESS_MS) return
     this.lastProgressAt = now
+    const tree = this.emitProgressiveTree()
     const progress: ScanProgress = {
       sessionId: this.sessionId,
       phase: this.phase,
@@ -529,7 +591,8 @@ export class ScanEngine {
         const total = this.foundPerTarget.get(t) ?? 0
         const processed = this.processedPerTarget.get(t) ?? 0
         return { path: t, percent: total > 0 ? Math.min(100, (processed / total) * 100) : 0 }
-      })
+      }),
+      ...(tree !== undefined ? { tree } : {})
     }
     this.broadcaster('scan:progress', progress)
   }
@@ -677,12 +740,16 @@ export class ScanEngine {
 
   /** 由目录聚合记录构建体积树，子级按体积降序 */
   private buildTree(): ScanTreeNode[] {
+    return this.buildTreeFrom(this.dirs)
+  }
+
+  private buildTreeFrom(dirs: Map<string, DirAgg>): ScanTreeNode[] {
     const nodes = new Map<string, ScanTreeNode>()
-    for (const [p, rec] of this.dirs) {
+    for (const [p, rec] of dirs) {
       nodes.set(p, { name: rec.name, path: p, size: rec.size, dupWasted: rec.dup, children: [] })
     }
     const roots: ScanTreeNode[] = []
-    for (const [p, rec] of this.dirs) {
+    for (const [p, rec] of dirs) {
       const node = nodes.get(p)
       if (!node) continue
       const parent = nodes.get(rec.parent)
