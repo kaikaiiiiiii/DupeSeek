@@ -110,6 +110,9 @@ export class ScanEngine {
   private rootParents = new Set<string>()
   private denied = 0
   private archiveTempRoots: string[] = []
+  private foundPerTarget = new Map<string, number>()
+  private processedPerTarget = new Map<string, number>()
+  private progressTargets: string[] = []
 
   constructor(broadcaster: Broadcaster) {
     this.broadcaster = broadcaster
@@ -137,6 +140,9 @@ export class ScanEngine {
     getHashPool().resetDenied()
     this.cleanupArchiveTemps()
     this.dirs = new Map()
+    this.foundPerTarget = new Map()
+    this.processedPerTarget = new Map()
+    this.progressTargets = [...settings.targets]
     // 体积归集的停点：目标目录的父目录（大小只归到目标根为止）
     this.rootParents = new Set(settings.targets.map((t) => path.dirname(t).toLowerCase()))
     this.sessionId = randomUUID()
@@ -200,6 +206,7 @@ export class ScanEngine {
     try {
       for (const target of settings.targets) {
         if (this.canceled) break
+        const before = entries.length
         let handled = false
         if (lister) {
           try {
@@ -209,6 +216,7 @@ export class ScanEngine {
           }
         }
         if (!handled) await walkTargets([target], ctx)
+        this.foundPerTarget.set(target, entries.length - before)
       }
       await this.listArchiveEntries(settings, entries, lastPath)
     } finally {
@@ -401,9 +409,27 @@ export class ScanEngine {
       bytesHashed: this.bytesHashed,
       currentPath,
       percent: this.found > 0 ? Math.min(100, (this.processed / this.found) * 100) : 0,
-      denied: this.denied + getHashPool().deniedCount
+      denied: this.denied + getHashPool().deniedCount,
+      targets: this.progressTargets.map((t) => {
+        const total = this.foundPerTarget.get(t) ?? 0
+        const processed = this.processedPerTarget.get(t) ?? 0
+        return { path: t, percent: total > 0 ? Math.min(100, (processed / total) * 100) : 0 }
+      })
     }
     this.broadcaster('scan:progress', progress)
+  }
+
+  /** 条目归属的扫描目标（最长前缀；包内条目按容器路径归属） */
+  private targetOf(entry: FileEntry, targets: string[]): string | null {
+    const root = (entry.containerPath ?? entry.path).toLowerCase()
+    let best: string | null = null
+    for (const t of targets) {
+      const lt = t.toLowerCase()
+      if (root === lt || root.startsWith(lt + '\\')) {
+        if (best === null || lt.length > best.length) best = t
+      }
+    }
+    return best
   }
 
   private recordDir(dir: string): void {
@@ -528,6 +554,10 @@ export class ScanEngine {
     for (const bucket of buckets.values()) {
       if (this.canceled) break
       this.processed += bucket.length
+      for (const e of bucket) {
+        const t = this.targetOf(e, settings.targets)
+        if (t) this.processedPerTarget.set(t, (this.processedPerTarget.get(t) ?? 0) + 1)
+      }
 
       if (bucket.length < 2) {
         this.emitProgress(bucket[0]?.path ?? '')

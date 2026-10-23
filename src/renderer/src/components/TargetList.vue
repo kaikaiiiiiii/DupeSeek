@@ -24,6 +24,13 @@
                 ✕
               </button>
             </div>
+            <!-- 独立扫描进度条：2px，扫完保持满格 -->
+            <div class="target-progress-track">
+              <div
+                class="target-progress-fill"
+                :style="{ width: (scan.targetProgress[String(item)] ?? 0) + '%' }"
+              ></div>
+            </div>
           </div>
         </template>
       </VirtualScrollList>
@@ -46,11 +53,13 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useScanStore } from '../stores/scan'
 import { useTargetStore } from '../stores/target'
 import { baseName } from '../utils/format'
 import VirtualScrollList from './VirtualScrollList.vue'
 
 const targetStore = useTargetStore()
+const scan = useScanStore()
 const targets = computed(() => targetStore.targets)
 const dragOver = ref(false)
 const busy = ref(false)
@@ -139,6 +148,7 @@ async function reveal(path: string): Promise<void> {
 }
 
 .target-item {
+  position: relative;
   height: 64px;
   display: flex;
   align-items: center;
@@ -146,6 +156,22 @@ async function reveal(path: string): Promise<void> {
   padding: 6px 8px;
   border-bottom: 1px solid var(--border-light);
   box-sizing: border-box;
+}
+
+/* 条目底部独立扫描进度条：高 2px，扫完保持满格 */
+.target-progress-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--border-light);
+}
+
+.target-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
 }
 
 .target-info {

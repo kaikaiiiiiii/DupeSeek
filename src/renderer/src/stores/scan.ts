@@ -16,6 +16,8 @@ export const useScanStore = defineStore('scan', () => {
   const status = ref<ScanStatus>('idle')
   const progress = ref<ScanProgress | null>(null)
   const summary = ref<ScanSummary | null>(null)
+  /** 各扫描目标的独立进度（0-100）；扫描正常结束后完成的目标保持 100 */
+  const targetProgress = ref<Record<string, number>>({})
   const error = ref('')
 
   function initDraft(saved: ScanSettings): void {
@@ -33,6 +35,11 @@ export const useScanStore = defineStore('scan', () => {
     if (status.value !== 'scanning') return
     adopt(p.sessionId)
     progress.value = p
+    if (p.targets) {
+      const next = { ...targetProgress.value }
+      for (const t of p.targets) next[t.path] = t.percent
+      targetProgress.value = next
+    }
   })
   window.api.onScanGroup((p) => {
     if (status.value !== 'scanning') return
@@ -44,6 +51,12 @@ export const useScanStore = defineStore('scan', () => {
     adopt(s.sessionId)
     summary.value = s
     status.value = 'done'
+    // 正常完成的扫描：各目标进度条保持满格；被取消的保留最后实际进度
+    if (!s.canceled) {
+      const next = { ...targetProgress.value }
+      for (const t of progress.value?.targets ?? []) next[t.path] = 100
+      targetProgress.value = next
+    }
     useDupeStore().markScanDone()
     useTreeSizeStore().setTree(s.tree)
   })
@@ -64,6 +77,7 @@ export const useScanStore = defineStore('scan', () => {
     useTreeSizeStore().reset()
     summary.value = null
     progress.value = null
+    targetProgress.value = {}
     error.value = ''
     sessionId.value = ''
     status.value = 'scanning'
@@ -80,5 +94,16 @@ export const useScanStore = defineStore('scan', () => {
     if (sessionId.value) window.api.scanStop(sessionId.value)
   }
 
-  return { draft, sessionId, status, progress, summary, error, initDraft, start, stop }
+  return {
+    draft,
+    sessionId,
+    status,
+    progress,
+    summary,
+    targetProgress,
+    error,
+    initDraft,
+    start,
+    stop
+  }
 })
