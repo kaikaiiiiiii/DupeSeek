@@ -1,4 +1,9 @@
 import { parentPort } from 'worker_threads'
+
+// 扫描管线把 .asar 当普通文件哈希——禁用 Electron 的 asar 虚拟路径补丁，
+// 否则路径含 .asar 的真实文件会被当作归档解析而读取失败
+process.noAsar = true
+
 import { md5FullFile, md5HeadFile } from './hash'
 import { isPermissionError } from '../../shared/errors'
 import { extractWholeRar, hashArchiveEntry, listArchive } from './archives'
