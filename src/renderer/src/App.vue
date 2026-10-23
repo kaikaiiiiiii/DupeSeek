@@ -38,9 +38,9 @@ import { useTargetStore } from './stores/target'
 
 const tabs = [
   { id: 'treesize', label: '空间分析', component: TreeSizeView },
-  { id: 'scan', label: '扫描', component: ScanView },
-  { id: 'dupes', label: '清理', component: DupeList },
-  { id: 'settings', label: '设置', component: SettingsView }
+  { id: 'scan', label: '扫描参数', component: ScanView },
+  { id: 'dupes', label: '清理规则', component: DupeList },
+  { id: 'settings', label: '软件设置', component: SettingsView }
 ] as const
 
 type TabId = (typeof tabs)[number]['id']

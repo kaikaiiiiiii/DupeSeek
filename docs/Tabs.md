@@ -5,9 +5,9 @@
 | 显示文字 | 功能界面          |
 | -------- | ----------------- |
 | 空间分析 | TreeSizeView.vue  |
-| 扫描     | ScanView.vue      |
-| 清理     | DupeList.vue      |
-| 设置     | SettingsView.vue  |
+| 扫描参数 | ScanView.vue      |
+| 清理规则 | DupeList.vue      |
+| 软件设置 | SettingsView.vue  |
 
 （原「浏览」Tab 已移除：添加/删除扫描目标由左侧 TargetList 的对话框、拖拽（系统拖放与应用内拖拽）与悬停操作完成，不再需要模拟文件浏览界面。空间分析 Tab 置于首位。）
 
