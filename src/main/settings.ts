@@ -7,7 +7,6 @@ import type { AppSettings } from '../shared/types'
 function defaults(): AppSettings {
   return {
     targets: [],
-    favorites: [],
     scanDraft: defaultScanDraft()
   }
 }
@@ -25,7 +24,6 @@ export function loadSettings(): AppSettings {
     const raw = JSON.parse(fs.readFileSync(settingsFile(), 'utf-8')) as Partial<AppSettings>
     cached = {
       targets: Array.isArray(raw.targets) ? raw.targets : base.targets,
-      favorites: Array.isArray(raw.favorites) ? raw.favorites : base.favorites,
       scanDraft: { ...base.scanDraft, ...(raw.scanDraft ?? {}) },
       resumeScan: raw.resumeScan === true
     }

@@ -17,7 +17,7 @@
       </nav>
       <div class="tab-content">
         <KeepAlive>
-          <component :is="current" @open-scan-settings="activeTab = 'scan'" />
+          <component :is="current" />
         </KeepAlive>
       </div>
     </div>
@@ -27,7 +27,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import DupeList from './components/DupeList.vue'
-import ExplorerView from './components/ExplorerView.vue'
 import ScanView from './components/ScanView.vue'
 import SettingsView from './components/SettingsView.vue'
 import TargetList from './components/TargetList.vue'
@@ -38,18 +37,17 @@ import { useSettingsStore } from './stores/settings'
 import { useTargetStore } from './stores/target'
 
 const tabs = [
-  { id: 'explorer', label: '浏览', component: ExplorerView },
+  { id: 'treesize', label: '空间分析', component: TreeSizeView },
   { id: 'scan', label: '扫描', component: ScanView },
   { id: 'dupes', label: '清理', component: DupeList },
-  { id: 'treesize', label: '空间分析', component: TreeSizeView },
   { id: 'settings', label: '设置', component: SettingsView }
 ] as const
 
 type TabId = (typeof tabs)[number]['id']
 
-const activeTab = ref<TabId>('explorer')
+const activeTab = ref<TabId>('treesize')
 const current = computed(
-  () => tabs.find((t) => t.id === activeTab.value)?.component ?? ExplorerView
+  () => tabs.find((t) => t.id === activeTab.value)?.component ?? TreeSizeView
 )
 
 onMounted(async () => {

@@ -2,12 +2,14 @@
 
 在界面设计中，Tabs 组件用于实现不同功能界面的 tab 切换逻辑和界面设计。通过 Tabs 组件，用户可以方便地在不同的功能界面之间切换，具体对应逻辑如下：
 
-| 显示文字 | 功能界面                  |
-| -------- | ------------------------- |
-| 浏览     | Explorer.vue              |
-| 扫描     | ScanSettings.vue          |
-| 清理     | DuplicateList.vue         |
-| 空间分析 | TreeSizeVisualization.vue |
+| 显示文字 | 功能界面          |
+| -------- | ----------------- |
+| 空间分析 | TreeSizeView.vue  |
+| 扫描     | ScanView.vue      |
+| 清理     | DupeList.vue      |
+| 设置     | SettingsView.vue  |
+
+（原「浏览」Tab 已移除：添加/删除扫描目标由左侧 TargetList 的对话框、拖拽（系统拖放与应用内拖拽）与悬停操作完成，不再需要模拟文件浏览界面。空间分析 Tab 置于首位。）
 
 在 DupeSeek 的主界面中，Tabs 组件位于功能区域的右侧上部。其切换会改变下方功能界面组件的显示内容。但主界面功能区域左侧的 TargetList 组件始终保持显示，不受 Tabs 切换影响。
 

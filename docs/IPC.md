@@ -16,8 +16,6 @@
 | Channel | 入参 | 返回 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `dialog:select-targets` | `{ kind: 'dir' \| 'file' \| 'both' }` | `string[] \| null` | 系统多选对话框；取消返回 null |
-| `fs:list` | `path: string` | `DirEntry[]` | Explorer 目录列表；无权限等错误 reject（目录不空但不可读返回 []） |
-| `fs:places` | — | `{ favorites: FavoriteItem[]; drives: FavoriteItem[] }` | 预置目录（桌面/文档/下载/用户目录）+ 盘符列表 |
 | `fs:reveal` | `path: string` | `void` | 在系统资源管理器中显示该条目（TargetList 放大镜图标） |
 | `scan:start` | `ScanSettings` | `sessionId: string` | 异步启动扫描会话；进度经事件回流。设置非法（如 targets 为空）reject |
 | `scan:stop` | `sessionId: string` | `void` | 协作式取消：主进程尽快停止，已算出的结果照常回流 |
@@ -52,8 +50,6 @@
 ```ts
 interface DupeSeekApi {
   selectTargets(kind: 'dir' | 'file' | 'both'): Promise<string[] | null>
-  listDir(path: string): Promise<DirEntry[]>
-  places(): Promise<{ favorites: FavoriteItem[]; drives: FavoriteItem[] }>
   reveal(path: string): Promise<void>
   pathForFile(file: File): string
   scanStart(settings: ScanSettings): Promise<string>
