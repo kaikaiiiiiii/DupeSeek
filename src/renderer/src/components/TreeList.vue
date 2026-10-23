@@ -33,7 +33,11 @@
       </template>
     </VirtualScrollList>
     <div v-else class="empty">
-      {{ scan.status === 'scanning' ? '正在扫描，体积树将在扫描完成后生成…' : '左侧添加扫描目标后自动开始分析' }}
+      {{
+        scan.status === 'scanning'
+          ? '正在扫描，体积树将在扫描完成后生成…'
+          : '左侧添加扫描目标后自动开始分析'
+      }}
     </div>
   </div>
 </template>

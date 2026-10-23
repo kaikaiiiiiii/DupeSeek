@@ -59,6 +59,8 @@ export interface ScanProgress {
   denied: number
   /** 各扫描目标的独立进度（枚举期 total 渐增，哈希期按条目计） */
   targets: Array<{ path: string; percent: number }>
+  /** 渐进体积树（约 1s 一次，随本事件回流；扫描结束后由 scan:done 携带终版） */
+  tree?: ScanTreeNode[]
 }
 
 export interface ScanSummary {
