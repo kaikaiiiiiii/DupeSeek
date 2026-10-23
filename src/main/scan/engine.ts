@@ -487,6 +487,7 @@ export class ScanEngine {
     const skipReparse = settings.excludeJunction
 
     // 目录级排除：被排除目录的整棵子树都要剔除（Everything 返回顺序不定，先收集前缀再统一过滤）
+    // node_modules：Everything 返回全量数据，直接按目录名收集前缀后从数组剔除
     const excluded: string[] = []
     const dirOk: string[] = []
     for (const dir of res.dirs) {

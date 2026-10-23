@@ -32,6 +32,8 @@ export interface ScanSettings {
   excludeHidden: boolean
   excludeSystem: boolean
   excludeJunction: boolean
+  /** 跳过 node_modules 目录（整棵子树，依赖目录通常无查重价值且体量巨大） */
+  excludeNodeModules: boolean
   /** 字节阈值，含边界；null 表示不限制 */
   minSize: number | null
   maxSize: number | null

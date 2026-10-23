@@ -118,5 +118,6 @@ export async function walkTargets(roots: string[], ctx: WalkContext): Promise<vo
 export function settingsExcludesDir(name: string, settings: ScanSettings): boolean {
   if (settings.excludeHidden && name.startsWith('.')) return true
   if (settings.excludeSystem && SYSTEM_DIRS.has(name)) return true
+  if (settings.excludeNodeModules && name === 'node_modules') return true
   return false
 }

@@ -7,6 +7,7 @@ export function defaultScanDraft(): ScanSettings {
     excludeHidden: false,
     excludeSystem: false,
     excludeJunction: true,
+    excludeNodeModules: true,
     minSize: null,
     maxSize: null,
     extBlacklist: [],

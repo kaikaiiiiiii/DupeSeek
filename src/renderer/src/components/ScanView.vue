@@ -16,6 +16,9 @@
         ><input v-model="scan.draft.excludeJunction" type="checkbox" /> 排除 junction /
         链接目录（防循环）</label
       >
+      <label class="check-row"
+        ><input v-model="scan.draft.excludeNodeModules" type="checkbox" /> 忽略 node_modules</label
+      >
       <!-- 压缩包内容解析开关已移至「设置」页 -->
 
       <div class="size-row">
