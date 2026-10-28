@@ -5,6 +5,11 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import folderIconPath from '../../resources/icons/folder.png?asset'
+
+const FOLDER_ICON = `data:image/png;base64,${fs.readFileSync(folderIconPath).toString('base64')}`
+/** 盘根（D:\ 或 D:）——getFileIcon 对它的返回恰好是正确的盘符图标 */
+const DRIVE_ROOT = /^[a-zA-Z]:\\?$/
 
 const cache = new Map<string, string>()
 const MAX_CACHE = 20000
@@ -28,12 +33,18 @@ export async function fileIconDataUrl(p: string): Promise<string> {
   const hit = cache.get(p)
   if (hit !== undefined) return hit
   let custom: string | null = null
+  let isDir = false
   try {
-    if (fs.statSync(p).isDirectory()) custom = await customDirIcon(p)
+    isDir = fs.statSync(p).isDirectory()
+    if (isDir) custom = await customDirIcon(p)
   } catch {
     // stat 失败按普通文件处理
   }
   if (custom !== null) return cacheSet(p, custom)
+  // 实测本 Electron 版本 getFileIcon 对一切目录都返回"存储设备"图标
+  // （桌面 ini 自定义之外无任何查询姿势可得真文件夹图标），目录统一用
+  // 内置文件夹图标；盘根保留 getFileIcon（返回的正是正确的盘符图标）
+  if (isDir && !DRIVE_ROOT.test(p)) return cacheSet(p, FOLDER_ICON)
   try {
     // large=32px 源，缩到 24 显示清晰（small 16px 源放大会发糊）
     const icon = await app.getFileIcon(p, { size: 'large' })
