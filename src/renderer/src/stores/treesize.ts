@@ -143,11 +143,20 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     }
   }
 
-  /** 树版本推进（扫描 progress / scan:done），变化即失效重取 */
+  /** 树版本推进（扫描 progress / scan:done）。重取按 400ms 尾沿节流：
+   *  哈希阶段组确认频繁（progress ~10Hz），避免逐事件全量失效重取 */
+  let refreshTimer: number | undefined
+  let pendingRev = 0
   function setRev(v: number): void {
-    if (v === rev.value) return
-    rev.value = v
-    refresh()
+    pendingRev = v
+    if (refreshTimer !== undefined) return
+    refreshTimer = window.setTimeout(() => {
+      refreshTimer = undefined
+      if (pendingRev !== rev.value) {
+        rev.value = pendingRev
+        refresh()
+      }
+    }, 400)
   }
 
   function toggleRow(item: TreeDirRow | TreeAggRow): void {

@@ -494,7 +494,8 @@ export class ScanEngine {
     flush()
   }
 
-  /** 组确认后把重复占用计入渐进树（哈希期增量归集，与 rebuildDirs 第3步同语义） */
+  /** 组确认后把重复占用计入渐进树（哈希期增量归集，与 rebuildDirs 第3步同语义）；
+   *  递增树版本让前端在哈希阶段也能实时重取 dup 数据 */
   private attributeDupToDirs(group: DupeGroup): void {
     const kept = group.entries.reduce((a, b) => (a.mtime <= b.mtime ? a : b))
     for (const e of group.entries) {
@@ -506,6 +507,7 @@ export class ScanEngine {
         this.addBytes(e.path, e.size, true, t ?? '')
       }
     }
+    this.treeRev++
   }
 
   private l0Key(e: FileEntry, settings: ScanSettings): string {
