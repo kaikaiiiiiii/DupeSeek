@@ -227,7 +227,7 @@ function barStyle(item: TreeRow): Record<string, string> {
 
 .tree-row {
   height: 34px;
-  font-size: 15px;
+  font-size: 14px;
   display: flex;
   align-items: center;
   padding: 0 10px;
@@ -237,18 +237,18 @@ function barStyle(item: TreeRow): Record<string, string> {
   position: relative;
 }
 
-/* 体积条（黄）：左缘在图标之后（10 padding + 14 disclosure + 20 icon + 8 margin，
+/* 体积条（黄）：左缘在图标之后（10 padding + 14 disclosure + 28 icon + 8 margin，
  * 外侧各留 2px 空隙）；宽度按名称列内可用宽度等比例，
- * 70px = 54 左缘 + 2 右侧空隙 + 4 间隙 + 10 右 padding，列宽用变量与拖拽联动，
+ * 78px = 62 左缘 + 2 右侧空隙 + 4 间隙 + 10 右 padding，列宽用变量与拖拽联动，
  * 保证 100% 不跨出名称列 */
 .tree-row::before {
   content: '';
   position: absolute;
   top: 2px;
   bottom: 2px;
-  left: calc(54px + var(--bar-indent, 0px));
+  left: calc(62px + var(--bar-indent, 0px));
   width: calc(
-    (100% - 70px - var(--col-size, 100px) - var(--col-dup, 110px) - var(--bar-indent, 0px)) *
+    (100% - 78px - var(--col-size, 100px) - var(--col-dup, 110px) - var(--bar-indent, 0px)) *
       var(--bar-ratio, 0)
   );
   background: var(--size-bar);
