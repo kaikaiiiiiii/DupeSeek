@@ -86,45 +86,57 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     refresh()
   }
 
-  async function ensureChildren(dir: string): Promise<void> {
-    if (childrenCache.value[dir] !== undefined) return
-    childrenCache.value = { ...childrenCache.value, [dir]: 'loading' }
+  async function ensureChildren(dir: string, force = false): Promise<void> {
+    const cur = childrenCache.value[dir]
+    if (cur === 'loading') return // 在途
+    if (cur !== undefined && !force) return // 已有缓存
     try {
       const res =
         dir === ROOT
           ? await window.api.treeRoots(sortKey.value, sortDesc.value)
           : await window.api.treeChildren(dir, sortKey.value, sortDesc.value)
-      if (res === null || res.rev !== rev.value) {
-        // 过期响应：丢弃，等下一次 refresh 重取
+      if (res === null || res.rev < rev.value) {
+        // 过期响应：首取失败回退为可重试；已有旧数据则保留显示，等下一轮
+        if (cur === undefined) {
+          const next = { ...childrenCache.value }
+          delete next[dir]
+          childrenCache.value = next
+        }
+        return
+      }
+      rev.value = Math.max(rev.value, res.rev)
+      childrenCache.value = { ...childrenCache.value, [dir]: res }
+    } catch {
+      if (cur === undefined) {
         const next = { ...childrenCache.value }
         delete next[dir]
         childrenCache.value = next
-        return
       }
-      childrenCache.value = { ...childrenCache.value, [dir]: res }
-    } catch {
-      const next = { ...childrenCache.value }
-      delete next[dir]
-      childrenCache.value = next
     }
   }
 
-  async function ensureFiles(dir: string): Promise<void> {
-    if (filesCache.value[dir] !== undefined) return
-    filesCache.value = { ...filesCache.value, [dir]: 'loading' }
+  async function ensureFiles(dir: string, force = false): Promise<void> {
+    const cur = filesCache.value[dir]
+    if (cur === 'loading') return // 在途
+    if (cur !== undefined && !force) return // 已有缓存
     try {
       const res = await window.api.treeFiles(dir, sortKey.value, sortDesc.value, 0, 10000)
-      if (res === null || res.rev !== rev.value) {
+      if (res === null || res.rev < rev.value) {
+        if (cur === undefined) {
+          const next = { ...filesCache.value }
+          delete next[dir]
+          filesCache.value = next
+        }
+        return
+      }
+      rev.value = Math.max(rev.value, res.rev)
+      filesCache.value = { ...filesCache.value, [dir]: res }
+    } catch {
+      if (cur === undefined) {
         const next = { ...filesCache.value }
         delete next[dir]
         filesCache.value = next
-        return
       }
-      filesCache.value = { ...filesCache.value, [dir]: res }
-    } catch {
-      const next = { ...filesCache.value }
-      delete next[dir]
-      filesCache.value = next
     }
   }
 
@@ -133,13 +145,13 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     filesCache.value = {}
   }
 
-  /** 重取根级与所有已展开条目的数据（按指令，与位置无关） */
+  /** 重取根级与所有已展开条目：stale-while-revalidate——重取期间旧数据
+   *  保持显示，响应到达后原位覆盖（避免哈希期反复闪烁加载态） */
   function refresh(): void {
-    invalidate()
-    void ensureChildren(ROOT)
+    void ensureChildren(ROOT, true)
     for (const cmd of expanded.value.values()) {
-      if (cmd.startsWith(AGG_PREFIX)) void ensureFiles(cmd.slice(AGG_PREFIX.length))
-      else void ensureChildren(cmd)
+      if (cmd.startsWith(AGG_PREFIX)) void ensureFiles(cmd.slice(AGG_PREFIX.length), true)
+      else void ensureChildren(cmd, true)
     }
   }
 
