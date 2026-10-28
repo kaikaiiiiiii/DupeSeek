@@ -3,6 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { app } from 'electron'
+import CreateEsParseWorker from './esParse.worker?nodeWorker'
 
 const ES_TIMEOUT_MS = 60_000
 const PROBE_TIMEOUT_MS = 5_000
@@ -26,12 +27,6 @@ export interface EverythingListResult {
 
 export interface EverythingLister {
   list(target: string): Promise<EverythingListResult>
-}
-
-interface EsRow {
-  filename: string
-  size?: number
-  date_modified?: string
 }
 
 function esCandidates(): string[] {
@@ -69,10 +64,28 @@ function runEs(esPath: string, args: string[], timeoutMs: number): Promise<strin
   })
 }
 
-function parseRows(text: string): EsRow[] {
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
-  if (text.trim() === '') return []
-  return JSON.parse(text) as EsRow[]
+/** es 导出产物（可达数百 MB）的读盘 + 解析放 worker 线程，避免阻塞主进程事件循环 */
+function parseInWorker(paths: string[], timeoutMs: number): Promise<EverythingListResult> {
+  return new Promise((resolve, reject) => {
+    const w = CreateEsParseWorker({})
+    const finish = (fn: () => void): void => {
+      clearTimeout(timer)
+      void w.terminate()
+      fn()
+    }
+    const timer = setTimeout(() => finish(() => reject(new Error('es 解析 worker 超时'))), timeoutMs)
+    w.on('message', (msg: { ok: boolean; error?: string } & Partial<EverythingListResult>) => {
+      finish(() => {
+        if (msg.ok && msg.files && msg.dirs && msg.reparse) {
+          resolve({ files: msg.files, dirs: msg.dirs, reparse: msg.reparse })
+        } else {
+          reject(new Error(msg.error ?? 'es 解析 worker 失败'))
+        }
+      })
+    })
+    w.on('error', (err) => finish(() => reject(err)))
+    w.postMessage(paths)
+  })
 }
 
 async function listViaEs(esPath: string, target: string): Promise<EverythingListResult> {
@@ -110,12 +123,9 @@ async function listViaEs(esPath: string, target: string): Promise<EverythingList
       ['-path', target, '/aL', '-json', '-full-path-and-name', '-export-json', outReparse],
       ES_TIMEOUT_MS
     )
-    const files = parseRows(fs.readFileSync(outFile, 'utf8'))
-    const dirs = parseRows(fs.readFileSync(outDir, 'utf8')).map((r) =>
-      r.filename.replace(/[\\/]+$/, '')
-    )
-    const reparse = parseRows(fs.readFileSync(outReparse, 'utf8')).map((r) =>
-      r.filename.replace(/[\\/]+$/, '')
+    const { files, dirs, reparse } = await parseInWorker(
+      [outFile, outDir, outReparse],
+      ES_TIMEOUT_MS
     )
 
     // 一致性哨兵：目录存在且非空，但 Everything 返回 0 条，说明未收录（如非 NTFS 卷），必须回退
@@ -129,15 +139,7 @@ async function listViaEs(esPath: string, target: string): Promise<EverythingList
       if (direct.length > 0) throw new Error('Everything 未收录该目录')
     }
 
-    return {
-      dirs,
-      reparse,
-      files: files.map((r) => ({
-        filename: r.filename,
-        size: r.size ?? 0,
-        mtimeMs: r.date_modified ? Date.parse(r.date_modified) || 0 : 0
-      }))
-    }
+    return { dirs, reparse, files }
   } finally {
     fs.rmSync(outFile, { force: true })
     fs.rmSync(outDir, { force: true })

@@ -419,9 +419,15 @@ export class ScanEngine {
     const touched = new Set<string>()
     const addSet = new Set(addList)
     // 触碰桶 = 新增目标所拥有条目的 L0 键（嵌套覆盖的既有条目不重触发哈希）
+    let sinceYield = 0
     for (const [key, e] of this.entries) {
       const owner = this.owners.get(key)
       if (owner !== undefined && addSet.has(owner)) touched.add(this.l0Key(e, settings))
+      // 全盘目标的条目量达百万级，大循环定期让出事件循环保持窗口响应
+      if (++sinceYield >= 200000) {
+        sinceYield = 0
+        await new Promise<void>((resolve) => setImmediate(resolve))
+      }
     }
 
     // 全量条目分桶，只保留被触碰的桶
@@ -432,6 +438,10 @@ export class ScanEngine {
       const b = buckets.get(key)
       if (b) b.push(e)
       else buckets.set(key, [e])
+      if (++sinceYield >= 200000) {
+        sinceYield = 0
+        await new Promise<void>((resolve) => setImmediate(resolve))
+      }
     }
     this.found = 0
     for (const b of buckets.values()) this.found += b.length
@@ -590,7 +600,15 @@ export class ScanEngine {
       return excluded.some((d) => lower.startsWith(`${d.toLowerCase()}\\`))
     }
 
+    let sinceYield = 0
     for (const f of res.files) {
+      // 长任务占住主进程会让窗口失去响应（拖动/重绘全停）：定期让出事件循环
+      if (++sinceYield >= 3000) {
+        sinceYield = 0
+        this.emitProgress(lastPath.value)
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        if (this.canceled) return true
+      }
       // reparse 文件（文件符号链接/云占位文件）：读取前者会穿越链接、
       // 读取后者会触发云端下载，均不符合本地查重的定位
       if (isExcluded(f.filename) || (isReparse(f.filename) && skipReparse)) continue
