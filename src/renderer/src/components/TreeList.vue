@@ -199,32 +199,33 @@ function barStyle(item: TreeRow): Record<string, string> {
   position: relative;
 }
 
-/* 体积条（黄）：左缘在图标之后（10 padding + 14 disclosure + 16 icon + 6 margin）；
- * 宽度按名称列内可用宽度等比例，270px = 46 + 4 间隙 + 大小列 100 + 重复占用列 110
- * + 右 padding 10，保证 100% 不跨出名称列 */
+/* 体积条（黄）：左缘在图标之后（10 padding + 14 disclosure + 16 icon + 6 margin，
+ * 外侧各留 2px 空隙）；宽度按名称列内可用宽度等比例，
+ * 274px = 48 + 2 右侧空隙 + 4 间隙 + 大小列 100 + 重复占用列 110 + 右 padding 10，
+ * 保证 100% 不跨出名称列 */
 .tree-row::before {
   content: '';
   position: absolute;
   top: 2px;
   bottom: 2px;
-  left: calc(46px + var(--bar-indent, 0px));
-  width: calc((100% - 270px - var(--bar-indent, 0px)) * var(--bar-ratio, 0));
+  left: calc(48px + var(--bar-indent, 0px));
+  width: calc((100% - 274px - var(--bar-indent, 0px)) * var(--bar-ratio, 0));
   background: var(--size-bar);
-  border-radius: 2px;
+  border-radius: 4px;
   z-index: 0;
   pointer-events: none;
 }
 
-/* 重复条（洋红）：限于重复占用列内，左缘 = 100% - 120px（列起点 10+110） */
+/* 重复条（洋红）：限于重复占用列内并左右各留 3px 空隙，宽度按全局最大重复等比例 */
 .tree-row::after {
   content: '';
   position: absolute;
   top: 2px;
   bottom: 2px;
-  left: calc(100% - 120px);
-  width: calc(110px * var(--dup-ratio, 0));
+  left: calc(100% - 117px);
+  width: calc(104px * var(--dup-ratio, 0));
   background: var(--dup-bar);
-  border-radius: 2px;
+  border-radius: 4px;
   z-index: 0;
   pointer-events: none;
 }
