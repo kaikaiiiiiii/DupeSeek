@@ -64,15 +64,15 @@ const scan = useScanStore()
 /** 与 .tree-row 的 padding 及 .indent-gap 宽度保持一致 */
 const INDENT = 16
 
-/** 体积条：左缘对齐所在层级缩进；100% 基准 = 名称列内可用宽度（不跨列）。
- *  重复条：洋红，限于重复占用列（固定 110px），按该层最大重复等比例 */
+/** 体积条：左缘对齐所在层级缩进；100% 基准 = 全局最大体积（名称列内可用宽度，
+ *  不跨列）。重复条：洋红，限于重复占用列（固定 110px），按全局最大重复等比例 */
 function barStyle(row: TreeRow): Record<string, string> {
-  const max = treesize.maxSizeByDepth.get(row.depth) ?? 0
-  const maxDup = treesize.maxDupByDepth.get(row.depth) ?? 0
   return {
     '--bar-indent': `${row.depth * INDENT}px`,
-    '--bar-ratio': max > 0 ? (row.node.size / max).toFixed(4) : '0',
-    '--dup-ratio': maxDup > 0 ? (row.node.dupWasted / maxDup).toFixed(4) : '0'
+    '--bar-ratio':
+      treesize.maxSize > 0 ? (row.node.size / treesize.maxSize).toFixed(4) : '0',
+    '--dup-ratio':
+      treesize.maxDup > 0 ? (row.node.dupWasted / treesize.maxDup).toFixed(4) : '0'
   }
 }
 </script>
@@ -116,8 +116,7 @@ function barStyle(row: TreeRow): Record<string, string> {
 }
 
 /* 体积条（黄）：左缘对齐所在层级缩进；宽度按名称列内可用宽度等比例，
- * 230px = 左右 padding 20 + 大小列 100 + 重复占用列 110，保证 100% 不跨出名称列 */
-.tree-row::before {
+ * 230px = 左右 padding 20 + 大小列 100 + 重复占用列 110，保证 100% 不跨出名称列 */.tree-row::before {
   content: '';
   position: absolute;
   top: 2px;
