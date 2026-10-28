@@ -13,6 +13,7 @@ export interface TreeFileRow {
   path: string
   name: string
   size: number
+  dupWasted: number
   depth: number
 }
 
@@ -62,7 +63,11 @@ export const useTreeSizeStore = defineStore('treesize', () => {
 
   /** 可见行中的全局最大重复占用，作为重复条的 100% 基准 */
   const maxDup = computed(() =>
-    rows.value.reduce((m, r) => Math.max(m, r.kind === 'dir' ? r.node.dupWasted : 0), 0)
+    rows.value.reduce(
+      (m, r) =>
+        Math.max(m, r.kind === 'dir' ? r.node.dupWasted : r.kind === 'file' ? r.dupWasted : 0),
+      0
+    )
   )
 
   /** 表头排序状态：默认按大小降序 */
@@ -82,7 +87,8 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     e.t === 'dir' ? e.node.name : e.t === 'file' ? e.file.name : e.name
   const entrySize = (e: Entry): number =>
     e.t === 'dir' ? e.node.size : e.t === 'file' ? e.file.size : e.size
-  const entryDup = (e: Entry): number => (e.t === 'dir' ? e.node.dupWasted : 0)
+  const entryDup = (e: Entry): number =>
+    e.t === 'dir' ? e.node.dupWasted : e.t === 'file' ? e.file.dupWasted : 0
 
   function cmpEntries(a: Entry, b: Entry): number {
     // 名称排序时 [n 个文件] 聚合条目恒排该层末尾
@@ -137,6 +143,7 @@ export const useTreeSizeStore = defineStore('treesize', () => {
             path: e.file.path,
             name: e.file.name,
             size: e.file.size,
+            dupWasted: e.file.dupWasted,
             depth
           })
         } else {
@@ -155,6 +162,7 @@ export const useTreeSizeStore = defineStore('treesize', () => {
                 path: f.path,
                 name: f.name,
                 size: f.size,
+                dupWasted: f.dupWasted,
                 depth: depth + 1
               })
             }

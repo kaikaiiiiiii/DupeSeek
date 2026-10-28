@@ -116,8 +116,8 @@ function view(item: TreeRow): RowView {
     sizeText: formatBytes(item.size),
     name: item.name,
     fullPath: item.path,
-    dupText: '—',
-    dupOn: false,
+    dupText: item.dupWasted > 0 ? formatBytes(item.dupWasted) : '—',
+    dupOn: item.dupWasted > 0,
     expandable: false
   }
 }
@@ -137,7 +137,7 @@ function onRowClick(item: TreeRow): void {
  *  不跨列）。重复条：洋红，限于重复占用列（固定 110px），按全局最大重复等比例 */
 function barStyle(item: TreeRow): Record<string, string> {
   const size = item.kind === 'dir' ? item.node.size : item.size
-  const dup = item.kind === 'dir' ? item.node.dupWasted : 0
+  const dup = item.kind === 'dir' ? item.node.dupWasted : item.kind === 'file' ? item.dupWasted : 0
   return {
     '--bar-indent': `${item.depth * INDENT}px`,
     '--bar-ratio': treesize.maxSize > 0 ? (size / treesize.maxSize).toFixed(4) : '0',
