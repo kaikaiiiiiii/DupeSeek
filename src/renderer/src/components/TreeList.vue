@@ -113,7 +113,7 @@ function view(item: TreeRow): RowView {
       depth: item.depth,
       arrow: treesize.expanded.has(item.id) ? '∨' : '>',
       iconKind: 'aggregate',
-      iconPath: item.path,
+      iconPath: '',
       sizeText: formatBytes(item.size),
       name: item.name,
       fullPath: item.name,
