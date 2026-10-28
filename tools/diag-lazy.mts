@@ -13,12 +13,40 @@ const target = process.argv[2] ?? 'D:\\Clash Party'
 const settings = { ...defaultScanDraft(), targets: target.split(',') }
 
 const engine = new ScanEngine(() => {})
+
+// 主进程响应性测量：25ms 心跳采样事件循环最大间隙（窗口冻结 = 间隙秒级）
+let maxGap = 0
+let last = Date.now()
+const ticker = setInterval(() => {
+  const now = Date.now()
+  maxGap = Math.max(maxGap, now - last)
+  last = now
+}, 25)
+
+const startedAt = Date.now()
 try {
-  const summary = await engine.syncTargets(settings)
-  console.log('[summary] filesFound =', summary.filesFound, 'treeRev =', summary.treeRev)
+  await Promise.race([
+    engine.syncTargets(settings),
+    new Promise<void>((resolve) => {
+      setTimeout(() => {
+        engine.stop()
+        resolve()
+      }, 25000)
+    })
+  ])
 } catch (err) {
-  console.error('[summary] 同步失败（枚举可能已完成，继续查树）：', err)
+  console.error('[summary] 同步失败：', err)
 }
+clearInterval(ticker)
+// @ts-expect-error 诊断直通私有状态
+console.log(
+  '[timing] elapsed =',
+  Date.now() - startedAt,
+  'ms; maxEventLoopGap =',
+  maxGap,
+  'ms; entries =',
+  engine.entries.size
+)
 
 const roots = engine.treeRoots('size', true)
 // @ts-expect-error 诊断直通私有状态
