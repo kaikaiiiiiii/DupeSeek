@@ -2,8 +2,15 @@
   <div class="list-area">
     <template v-if="treesize.rows.length > 0">
       <div class="tree-header">
-        <span class="dir-name">名称</span>
-        <span class="dir-dup">重复占用</span>
+        <span class="dir-name sortable" @click="treesize.setSort('name')">
+          名称{{ indicator('name') }}
+        </span>
+        <span class="dir-size sortable" @click="treesize.setSort('size')">
+          大小{{ indicator('size') }}
+        </span>
+        <span class="dir-dup sortable" @click="treesize.setSort('dup')">
+          重复占用{{ indicator('dup') }}
+        </span>
       </div>
       <div class="tree-scroll">
         <VirtualScrollList :items="treesize.rows" :item-size="28">
@@ -24,6 +31,7 @@
               <span class="dir-name" :title="view(item as TreeRow).fullPath">{{
                 view(item as TreeRow).name
               }}</span>
+              <span class="dir-size">{{ view(item as TreeRow).sizeText }}</span>
               <span class="dir-dup" :class="{ dup: view(item as TreeRow).dupOn }">{{
                 view(item as TreeRow).dupText
               }}</span>
@@ -86,10 +94,24 @@ function view(item: TreeRow): RowView {
       expandable
     }
   }
+  if (item.kind === 'aggregate') {
+    return {
+      depth: item.depth,
+      arrow: treesize.expanded.has(item.path) ? '∨' : '>',
+      iconKind: 'aggregate',
+      iconPath: item.path,
+      sizeText: formatBytes(item.size),
+      name: item.name,
+      fullPath: item.name,
+      dupText: '—',
+      dupOn: false,
+      expandable: true
+    }
+  }
   return {
     depth: item.depth,
     arrow: '',
-    iconKind: item.kind,
+    iconKind: 'file',
     iconPath: item.path,
     sizeText: formatBytes(item.size),
     name: item.name,
@@ -100,8 +122,15 @@ function view(item: TreeRow): RowView {
   }
 }
 
+/** 表头排序指示符：当前排序列显示方向箭头 */
+function indicator(key: 'name' | 'size' | 'dup'): string {
+  if (treesize.sortKey !== key) return ''
+  return treesize.sortDesc ? ' ↓' : ' ↑'
+}
+
 function onRowClick(item: TreeRow): void {
   if (item.kind === 'dir' && view(item).expandable) treesize.toggle(item.node.path)
+  else if (item.kind === 'aggregate') treesize.toggle(item.path)
 }
 
 /** 体积条：左缘对齐所在层级缩进；100% 基准 = 全局最大体积（名称列内可用宽度，
@@ -156,15 +185,15 @@ function barStyle(item: TreeRow): Record<string, string> {
 }
 
 /* 体积条（黄）：左缘在图标之后（10 padding + 14 disclosure + 16 icon + 6 margin）；
- * 宽度按名称列内可用宽度等比例，170px = 46 + 4 间隙 + 重复占用列 110 + 右 padding 10，
- * 保证 100% 不跨出名称列 */
+ * 宽度按名称列内可用宽度等比例，270px = 46 + 4 间隙 + 大小列 100 + 重复占用列 110
+ * + 右 padding 10，保证 100% 不跨出名称列 */
 .tree-row::before {
   content: '';
   position: absolute;
   top: 2px;
   bottom: 2px;
   left: calc(46px + var(--bar-indent, 0px));
-  width: calc((100% - 170px - var(--bar-indent, 0px)) * var(--bar-ratio, 0));
+  width: calc((100% - 270px - var(--bar-indent, 0px)) * var(--bar-ratio, 0));
   background: var(--size-bar);
   border-radius: 2px;
   z-index: 0;
@@ -232,11 +261,26 @@ function barStyle(item: TreeRow): Record<string, string> {
   text-overflow: ellipsis;
 }
 
+.dir-size {
+  width: 100px;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--muted);
+}
+
 .dir-dup {
   width: 110px;
   flex-shrink: 0;
   text-align: right;
   color: var(--muted);
+}
+
+.sortable {
+  cursor: pointer;
+}
+
+.sortable:hover {
+  color: var(--text);
 }
 
 .dup {
