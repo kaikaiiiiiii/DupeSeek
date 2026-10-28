@@ -1,5 +1,5 @@
 <template>
-  <div class="list-area">
+  <div class="list-area" :style="colVars">
     <template v-if="treesize.rows.length > 0">
       <div class="tree-header">
         <span class="dir-name sortable" @click="treesize.setSort('name')">
@@ -7,9 +7,11 @@
         </span>
         <span class="dir-size sortable" @click="treesize.setSort('size')">
           大小{{ indicator('size') }}
+          <span class="col-resize" @mousedown="startResize($event, 'size')" @click.stop></span>
         </span>
         <span class="dir-dup sortable" @click="treesize.setSort('dup')">
           重复占用{{ indicator('dup') }}
+          <span class="col-resize" @mousedown="startResize($event, 'dup')" @click.stop></span>
         </span>
       </div>
       <div class="tree-scroll">
@@ -51,6 +53,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { useScanStore } from '../stores/scan'
 import { useTreeSizeStore, type TreeRow } from '../stores/treesize'
 import { formatBytes } from '../utils/format'
@@ -62,6 +65,40 @@ const scan = useScanStore()
 
 /** 与 .indent-gap 宽度保持一致 */
 const INDENT = 16
+
+// —— 列宽（可拖拽调整）：CSS 变量统一驱动列、表头与体积条几何 ——
+const sizeW = ref(100)
+const dupW = ref(110)
+const colVars = computed(() => ({
+  '--col-size': `${sizeW.value}px`,
+  '--col-dup': `${dupW.value}px`
+}))
+
+const COL_MIN = 60
+const COL_MAX = 320
+
+/** 表头右缘拖拽手柄：按住横向移动调整列宽 */
+function startResize(ev: MouseEvent, which: 'size' | 'dup'): void {
+  ev.preventDefault()
+  ev.stopPropagation()
+  const startX = ev.clientX
+  const startW = which === 'size' ? sizeW.value : dupW.value
+  const onMove = (mv: MouseEvent): void => {
+    const w = Math.min(COL_MAX, Math.max(COL_MIN, startW + mv.clientX - startX))
+    if (which === 'size') sizeW.value = w
+    else dupW.value = w
+  }
+  const onUp = (): void => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
 
 interface RowView {
   depth: number
@@ -201,7 +238,7 @@ function barStyle(item: TreeRow): Record<string, string> {
 
 /* 体积条（黄）：左缘在图标之后（10 padding + 14 disclosure + 16 icon + 6 margin，
  * 外侧各留 2px 空隙）；宽度按名称列内可用宽度等比例，
- * 274px = 48 + 2 右侧空隙 + 4 间隙 + 大小列 100 + 重复占用列 110 + 右 padding 10，
+ * 64px = 48 左缘 + 2 右侧空隙 + 4 间隙 + 10 右 padding，列宽用变量与拖拽联动，
  * 保证 100% 不跨出名称列 */
 .tree-row::before {
   content: '';
@@ -209,7 +246,10 @@ function barStyle(item: TreeRow): Record<string, string> {
   top: 2px;
   bottom: 2px;
   left: calc(48px + var(--bar-indent, 0px));
-  width: calc((100% - 274px - var(--bar-indent, 0px)) * var(--bar-ratio, 0));
+  width: calc(
+    (100% - 64px - var(--col-size, 100px) - var(--col-dup, 110px) - var(--bar-indent, 0px)) *
+      var(--bar-ratio, 0)
+  );
   background: var(--size-bar);
   border-radius: 4px;
   z-index: 0;
@@ -222,8 +262,8 @@ function barStyle(item: TreeRow): Record<string, string> {
   position: absolute;
   top: 2px;
   bottom: 2px;
-  left: calc(100% - 117px);
-  width: calc(104px * var(--dup-ratio, 0));
+  left: calc(100% - var(--col-dup, 110px) - 7px);
+  width: calc((var(--col-dup, 110px) - 6px) * var(--dup-ratio, 0));
   background: var(--dup-bar);
   border-radius: 4px;
   z-index: 0;
@@ -278,17 +318,46 @@ function barStyle(item: TreeRow): Record<string, string> {
 }
 
 .dir-size {
-  width: 100px;
+  width: var(--col-size, 100px);
   flex-shrink: 0;
   text-align: right;
   color: var(--muted);
 }
 
 .dir-dup {
-  width: 110px;
+  width: var(--col-dup, 110px);
   flex-shrink: 0;
   text-align: right;
   color: var(--muted);
+}
+
+/* 表头右缘的列宽拖拽手柄 */
+.tree-header .dir-size,
+.tree-header .dir-dup {
+  position: relative;
+}
+
+.col-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+}
+
+.col-resize::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+}
+
+.col-resize:hover::after {
+  background: var(--border);
 }
 
 .sortable {
