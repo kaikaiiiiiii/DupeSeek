@@ -196,6 +196,7 @@ export class ScanEngine {
     getHashPool().resetDenied()
     this.sessionId = randomUUID()
     this.progressTargets = addList
+    for (const t of addList) this.coveredTargets.add(t)
     const sessionId = this.sessionId
     const startedAt = Date.now()
 
