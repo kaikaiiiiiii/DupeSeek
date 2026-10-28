@@ -35,6 +35,7 @@ src
 * IPC.md — 前后端 IPC 通信协议
 * Store.md — Pinia 状态管理设计
 * Database.md — SQLite 数据库设计
+* KnownIssues.md — 平台与文件系统差异（已知问题：mac 未出包、Linux RAR 解压缺失、符号链接跳过等）
 
 项目有迭代，以上简述可能已过期，请以 docs 目录内的实际文档为准。
 
