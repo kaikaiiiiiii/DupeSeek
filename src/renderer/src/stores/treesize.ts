@@ -25,10 +25,14 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     return count
   })
 
-  /** 当前可见行中的最大体积，作为体积条的 100% 基准 */
-  const maxSize = computed(() =>
-    rows.value.reduce((m, r) => (r.node.size > m ? r.node.size : m), 0)
-  )
+  /** 各层级的最大体积（按可见行统计），作为该层体积条的 100% 基准 */
+  const maxSizeByDepth = computed(() => {
+    const max = new Map<number, number>()
+    for (const r of rows.value) {
+      if (r.node.size > (max.get(r.depth) ?? 0)) max.set(r.depth, r.node.size)
+    }
+    return max
+  })
 
   /** 按展开状态把树摊平成定高行，交给虚拟滚动 */
   const rows = computed<TreeRow[]>(() => {
@@ -85,7 +89,7 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     totalSize,
     totalDup,
     dirCount,
-    maxSize,
+    maxSizeByDepth,
     rows,
     setTree,
     toggle,
