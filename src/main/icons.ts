@@ -35,7 +35,8 @@ export async function fileIconDataUrl(p: string): Promise<string> {
   }
   if (custom !== null) return cacheSet(p, custom)
   try {
-    const icon = await app.getFileIcon(p, { size: 'small' })
+    // large=32px 源，缩到 24 显示清晰（small 16px 源放大会发糊）
+    const icon = await app.getFileIcon(p, { size: 'large' })
     return cacheSet(p, icon.toDataURL())
   } catch {
     return cacheSet(p, '')
