@@ -766,15 +766,31 @@ export class ScanEngine {
       if (parent) parent.children.push(node)
       else roots.push(node)
     }
-    // 真实文件挂到父目录节点（压缩包内条目不挂，其体积已走合成目录链）
+    // 真实文件挂到父目录节点（压缩包内条目不挂，其体积已走合成目录链）；
+    // 文件级重复占用 = 该文件在各重复组中作为非保留副本的体积之和
+    const wastedByPath = new Map<string, number>()
+    for (const g of this.knownGroups.values()) {
+      if (g.entries.length < 2) continue
+      const kept = g.entries.reduce((a, b) => (a.mtime <= b.mtime ? a : b))
+      for (const e of g.entries) {
+        if (e.path === kept.path || e.containerPath !== null) continue
+        wastedByPath.set(e.path, (wastedByPath.get(e.path) ?? 0) + e.size)
+      }
+    }
     const fileGroups = new Map<string, TreeNodeFile[]>()
     for (const list of this.targetEntries.values()) {
       for (const e of list) {
         if (e.containerPath !== null) continue
+        const item: TreeNodeFile = {
+          path: e.path,
+          name: e.name,
+          size: e.size,
+          dupWasted: wastedByPath.get(e.path) ?? 0
+        }
         const parent = path.dirname(e.path)
         const arr = fileGroups.get(parent)
-        if (arr) arr.push({ path: e.path, name: e.name, size: e.size })
-        else fileGroups.set(parent, [{ path: e.path, name: e.name, size: e.size }])
+        if (arr) arr.push(item)
+        else fileGroups.set(parent, [item])
       }
     }
     for (const [p, arr] of fileGroups) {

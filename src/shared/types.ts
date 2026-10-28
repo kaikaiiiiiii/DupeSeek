@@ -85,6 +85,8 @@ export interface TreeNodeFile {
   path: string
   name: string
   size: number
+  /** 该文件作为重复副本的浪费字节（每组保留最早修改的一份）；非重复为 0 */
+  dupWasted: number
 }
 
 export interface ScanTreeNode {
