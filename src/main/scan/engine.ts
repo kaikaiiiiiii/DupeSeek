@@ -766,7 +766,8 @@ export class ScanEngine {
     for (const [p, rec] of dirs) {
       const node = nodes.get(p)
       if (!node) continue
-      const parent = nodes.get(rec.parent)
+      // 盘根（如 D:\）的 dirname 是它自身——自指视为根，否则永远进不了 roots
+      const parent = rec.parent !== p ? nodes.get(rec.parent) : undefined
       if (parent) parent.children.push(node)
       else roots.push(node)
     }
