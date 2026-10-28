@@ -96,6 +96,13 @@ async function pMap<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>
 
 type HashSlot = 'headmd5' | 'fullmd5'
 
+/** 目标路径规范化：去尾部分隔符；裸盘符（D:）补全为根形式；剥空（本身就是盘根）保持原样 */
+function canonicalTarget(t: string): string {
+  const stripped = t.replace(/[\\/]+$/, '')
+  if (stripped === '') return t
+  return /^[a-zA-Z]:$/.test(stripped) ? stripped + '\\' : stripped
+}
+
 /**
  * 有状态的增量扫描引擎。
  *
@@ -180,10 +187,12 @@ export class ScanEngine {
   /** 目标列表同步：新增目标增量扫描，移除目标纯内存清理 */
   async syncTargets(settings: ScanSettings): Promise<ScanSummary> {
     if (this.running) throw new Error('已有扫描任务在进行中')
-    if (settings.targets.length === 0) throw new Error('请先添加扫描目标')
+    // 目标规范化在后端统一做：尾斜杠/裸盘符变体不产生第二份会话
+    const canon: ScanSettings = { ...settings, targets: settings.targets.map(canonicalTarget) }
+    if (canon.targets.length === 0) throw new Error('请先添加扫描目标')
 
-    const requested = new Set(settings.targets)
-    const addList = settings.targets.filter((t) => !this.coveredTargets.has(t))
+    const requested = new Set(canon.targets)
+    const addList = canon.targets.filter((t) => !this.coveredTargets.has(t))
     const removeList = [...this.coveredTargets].filter((t) => !requested.has(t))
 
     this.running = true
@@ -206,16 +215,16 @@ export class ScanEngine {
 
       // 新增：枚举 → 触碰桶比较（只有 L0 同桶的新条目触发哈希）
       if (addList.length > 0) {
-        const lister = settings.useEverything ? await createEverythingLister() : null
+        const lister = canon.useEverything ? await createEverythingLister() : null
         console.info(
           `[scan] 枚举通道（${addList.length} 个新增目标）：${lister ? 'Everything (es.exe)' : settings.useEverything ? 'fs walk（Everything 不可用）' : 'fs walk（已在设置中禁用 Everything）'}`
         )
-        await this.enumerateAdds(addList, settings, lister)
+        await this.enumerateAdds(addList, canon, lister)
 
         if (!this.canceled) {
           this.phase = 'hashing'
           this.processed = 0
-          await this.hashTouched(settings, addList)
+          await this.hashTouched(canon, addList)
         }
       }
 
@@ -264,6 +273,12 @@ export class ScanEngine {
     return process.platform === 'win32' ? p.toLowerCase() : p
   }
 
+  /** 目标根的比对口径：去尾部分隔符并归一。盘根（D:\）若不先去尾，
+   *  前缀判断会要求双反斜杠开头，整棵子树都无法登记/累加 */
+  private stopOf(target: string): string {
+    return this.keyOf(target).replace(/[\\/]+$/, '')
+  }
+
   /** 注册条目：路径已存在（被其它目标覆盖）返回 false——嵌套目标去重的唯一入口 */
   private registerEntry(e: FileEntry, target: string): boolean {
     const key = this.keyOf(e.path)
@@ -282,7 +297,7 @@ export class ScanEngine {
     for (const [key, owner] of this.owners) {
       if (owner !== target) continue
       const cover = remaining.find((t) => {
-        const lt = this.keyOf(t)
+        const lt = this.stopOf(t)
         return key === lt || key.startsWith(lt + '\\')
       })
       if (cover) this.owners.set(key, cover)
@@ -607,7 +622,7 @@ export class ScanEngine {
 
   /** 增量登记一个条目的目录链与体积（渐进树用；与 rebuildDirs 语义一致） */
   private addEntryToDirs(e: FileEntry, target: string): void {
-    const stop = target.toLowerCase()
+    const stop = this.stopOf(target)
     if (e.containerPath !== null && e.entryPath !== null) {
       const root = e.containerPath + '::'
       this.recordDirAt(root, path.dirname(e.containerPath), path.basename(e.containerPath))
@@ -693,7 +708,7 @@ export class ScanEngine {
           p = next
         }
       } else {
-        const stop = (this.owners.get(this.keyOf(e.path)) ?? '').toLowerCase()
+        const stop = this.stopOf(this.owners.get(this.keyOf(e.path)) ?? '')
         let p = path.dirname(e.path)
         for (;;) {
           const lp = p.toLowerCase()
@@ -781,7 +796,7 @@ export class ScanEngine {
 
   /** 把字节数沿文件的祖先目录链累加到所属目标根为止 */
   private addBytes(filePath: string, bytes: number, dup: boolean, targetRoot: string): void {
-    const stop = targetRoot.toLowerCase()
+    const stop = this.stopOf(targetRoot)
     let p = path.dirname(filePath)
     for (;;) {
       const rec = this.dirs.get(p)
