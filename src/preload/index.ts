@@ -29,6 +29,7 @@ const api: DupeSeekApi = {
   getSettings: () => ipcRenderer.invoke('app:get-settings'),
   setSettings: (patch) => ipcRenderer.invoke('app:set-settings', plainJson(patch)),
   capabilities: () => ipcRenderer.invoke('app:capabilities'),
+  fileIcons: (paths) => ipcRenderer.invoke('app:file-icons', paths),
 
   onScanProgress: subscribe('scan:progress'),
   onScanGroup: subscribe('scan:group'),
