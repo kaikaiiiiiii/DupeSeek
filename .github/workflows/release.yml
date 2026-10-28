@@ -41,10 +41,10 @@ jobs:
             index($0, head) == 1 { flag = 1; next }
             /^## / { flag = 0 }
             flag
-          ' change.log > RELEASE_NOTES.md
+          ' CHANGELOG.md > RELEASE_NOTES.md
           # 段落缺失时退回占位文本（Release 仍会附自动生成的对比链接）
           if [ ! -s RELEASE_NOTES.md ]; then
-            echo "（change.log 中暂无 ${VERSION} 段落，请查阅仓库根目录 change.log）" > RELEASE_NOTES.md
+            echo "（CHANGELOG.md 中暂无 ${VERSION} 段落，请查阅仓库根目录 CHANGELOG.md）" > RELEASE_NOTES.md
           fi
 
       - name: 安装依赖
