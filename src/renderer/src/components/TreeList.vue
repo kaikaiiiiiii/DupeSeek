@@ -78,19 +78,33 @@ interface RowView {
 }
 
 function view(item: TreeRow): RowView {
-  if (item.kind === 'dir') {
-    const n = item.node
-    const expandable = n.children.length > 0 || n.files.length > 0
+  if (item.kind === 'loading') {
     return {
       depth: item.depth,
-      arrow: expandable ? (treesize.expanded.has(n.path) ? '∨' : '>') : '',
+      arrow: '',
+      iconKind: 'file',
+      iconPath: '',
+      sizeText: '',
+      name: '加载中…',
+      fullPath: '',
+      dupText: '—',
+      dupOn: false,
+      expandable: false
+    }
+  }
+  if (item.kind === 'dir') {
+    const d = item.data
+    const expandable = d.childDirs > 0 || d.fileCount > 0
+    return {
+      depth: item.depth,
+      arrow: expandable ? (treesize.expanded.has(d.path) ? '∨' : '>') : '',
       iconKind: 'dir',
-      iconPath: n.path,
-      sizeText: formatBytes(n.size),
-      name: n.name,
-      fullPath: n.path,
-      dupText: n.dupWasted > 0 ? formatBytes(n.dupWasted) : '—',
-      dupOn: n.dupWasted > 0,
+      iconPath: d.path,
+      sizeText: formatBytes(d.size),
+      name: d.name,
+      fullPath: d.path,
+      dupText: d.dupWasted > 0 ? formatBytes(d.dupWasted) : '—',
+      dupOn: d.dupWasted > 0,
       expandable
     }
   }
@@ -103,8 +117,8 @@ function view(item: TreeRow): RowView {
       sizeText: formatBytes(item.size),
       name: item.name,
       fullPath: item.name,
-      dupText: '—',
-      dupOn: false,
+      dupText: item.dupWasted > 0 ? formatBytes(item.dupWasted) : '—',
+      dupOn: item.dupWasted > 0,
       expandable: true
     }
   }
@@ -129,15 +143,16 @@ function indicator(key: 'name' | 'size' | 'dup'): string {
 }
 
 function onRowClick(item: TreeRow): void {
-  if (item.kind === 'dir' && view(item).expandable) treesize.toggle(item.node.path)
+  if (item.kind === 'dir' && view(item).expandable) treesize.toggle(item.data.path)
   else if (item.kind === 'aggregate') treesize.toggle(item.path)
 }
 
 /** 体积条：左缘对齐所在层级缩进；100% 基准 = 全局最大体积（名称列内可用宽度，
  *  不跨列）。重复条：洋红，限于重复占用列（固定 110px），按全局最大重复等比例 */
 function barStyle(item: TreeRow): Record<string, string> {
-  const size = item.kind === 'dir' ? item.node.size : item.size
-  const dup = item.kind === 'dir' ? item.node.dupWasted : item.kind === 'file' ? item.dupWasted : 0
+  const size = item.kind === 'loading' ? 0 : item.kind === 'dir' ? item.data.size : item.size
+  const dup =
+    item.kind === 'dir' ? item.data.dupWasted : item.kind === 'loading' ? 0 : item.dupWasted
   return {
     '--bar-indent': `${item.depth * INDENT}px`,
     '--bar-ratio': treesize.maxSize > 0 ? (size / treesize.maxSize).toFixed(4) : '0',
@@ -286,6 +301,10 @@ function barStyle(item: TreeRow): Record<string, string> {
 .dup {
   color: var(--danger);
   font-weight: 600;
+}
+
+.tree-row .loading-text {
+  color: var(--muted);
 }
 
 .empty {

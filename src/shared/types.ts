@@ -61,8 +61,8 @@ export interface ScanProgress {
   denied: number
   /** 各扫描目标的独立进度（枚举期 total 渐增，哈希期按条目计） */
   targets: Array<{ path: string; percent: number }>
-  /** 渐进体积树（约 1s 一次，随本事件回流；扫描结束后由 scan:done 携带终版） */
-  tree?: ScanTreeNode[]
+  /** 体积树版本：变更时递增，前端据此失效缓存并按需重取 */
+  treeRev: number
 }
 
 export interface ScanSummary {
@@ -76,8 +76,8 @@ export interface ScanSummary {
   errors: number
   /** 其中权限不足的条数 */
   denied: number
-  /** 目录体积树（多目标为森林），供空间分析视图使用 */
-  tree: ScanTreeNode[]
+  /** 体积树版本终值 */
+  treeRev: number
 }
 
 /** 体积树中挂在目录节点下的真实文件（压缩包内条目不挂，走合成目录） */
@@ -89,16 +89,50 @@ export interface TreeNodeFile {
   dupWasted: number
 }
 
-export interface ScanTreeNode {
-  name: string
+export type TreeSortKey = 'name' | 'size' | 'dup'
+
+/** 体积树目录行（按需查询返回；元数据让前端无需二次请求即可画展开箭头与聚合占位） */
+export interface TreeDirRowData {
   path: string
+  name: string
   /** 该目录（含子孙）聚合的文件字节数 */
   size: number
-  /** 该目录（含子孙）中重复副本占用的字节数（按"每组保留最早修改"口径归集） */
+  /** 该目录（含子孙）中重复副本占用的字节数 */
   dupWasted: number
-  children: ScanTreeNode[]
-  /** 直接位于该目录下的文件（不含子孙目录内的） */
-  files: TreeNodeFile[]
+  /** 直属子目录数 */
+  childDirs: number
+  /** 直属文件数（不含子目录内的） */
+  fileCount: number
+  /** 直属文件字节和 */
+  fileBytes: number
+}
+
+/** 全局统计（去重后的并集口径：嵌套目标的重叠部分只计一次） */
+export interface TreeStats {
+  totalSize: number
+  totalDup: number
+  dirCount: number
+}
+
+export interface TreeChildrenReply {
+  rev: number
+  dirs: TreeDirRowData[]
+  /** 直属文件聚合（[n 个文件]）；目录无子目录时不返回（前端逐文件展开） */
+  agg: { count: number; size: number; dupWasted: number } | null
+  stats: TreeStats
+}
+
+export interface TreeFileRowData {
+  path: string
+  name: string
+  size: number
+  dupWasted: number
+}
+
+export interface TreeFilesReply {
+  rev: number
+  total: number
+  rows: TreeFileRowData[]
 }
 
 export interface DupeGroup {
@@ -156,6 +190,18 @@ export interface DupeSeekApi {
   capabilities(): Promise<AppCapabilities>
   /** 批量取文件/目录的系统图标（dataURL，主进程带缓存） */
   fileIcons(paths: string[]): Promise<Record<string, string>>
+  /** 体积树根级行（每个已同步目标一行） */
+  treeRoots(sortKey: TreeSortKey, desc: boolean): Promise<TreeChildrenReply>
+  /** 体积树某目录的子级行；目录不存在返回 null */
+  treeChildren(dir: string, sortKey: TreeSortKey, desc: boolean): Promise<TreeChildrenReply | null>
+  /** 体积树某目录的直属文件（分页） */
+  treeFiles(
+    dir: string,
+    sortKey: TreeSortKey,
+    desc: boolean,
+    offset: number,
+    limit: number
+  ): Promise<TreeFilesReply | null>
 
   onScanProgress(cb: (p: ScanProgress) => void): () => void
   onScanGroup(cb: (p: { sessionId: string; groups: DupeGroup[] }) => void): () => void

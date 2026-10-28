@@ -9,8 +9,12 @@ import type {
   ScanProgress,
   ScanSettings,
   ScanSummary,
-  ScanTreeNode,
-  TreeNodeFile
+  TreeChildrenReply,
+  TreeDirRowData,
+  TreeFilesReply,
+  TreeNodeFile,
+  TreeSortKey,
+  TreeStats
 } from '../../shared/types'
 import { isPermissionError } from '../../shared/errors'
 import { createEverythingLister, type EverythingLister } from './everything'
@@ -129,7 +133,16 @@ export class ScanEngine {
   private foundPerTarget = new Map<string, number>()
   private processedPerTarget = new Map<string, number>()
   private progressTargets: string[] = []
-  private lastTreeAt = 0
+
+  // —— 体积树（后端权威，前端按需查询）——
+  /** 树版本：任何目录/文件数据变更时递增，前端据此失效缓存重取 */
+  private treeRev = 0
+  /** 目录 → 直属真实文件（压缩包内条目不挂，走合成目录链聚合） */
+  private dirFiles = new Map<string, TreeNodeFile[]>()
+  /** 父目录 → 子目录路径（惰性查询的子级索引） */
+  private childDirs = new Map<string, string[]>()
+  /** 文件级重复占用缓存（随 knownGroups 变化按版本失效） */
+  private wastedCache: { rev: number; map: Map<string, number> } | null = null
 
   // —— 持久会话状态 ——
   private entries = new Map<string, FileEntry>()
@@ -189,9 +202,6 @@ export class ScanEngine {
     try {
       // 移除：纯内存清理（条目重归属/删除、组剔除、进度），零磁盘 I/O
       for (const t of removeList) this.removeTarget(t)
-      // 渐进树基线：重置节流，让枚举期第一个 progress 事件立即携带
-      // 当前的全量树（移除目标后的体积变化随之即时可见）
-      this.lastTreeAt = 0
 
       // 新增：枚举 → 触碰桶比较（只有 L0 同桶的新条目触发哈希）
       if (addList.length > 0) {
@@ -211,7 +221,6 @@ export class ScanEngine {
       // 汇总：体积树按当前全量条目重算，组数为会话累计值
       this.phase = 'finalizing'
       this.rebuildDirs()
-      const tree = this.buildTree()
       let wastedBytes = 0
       for (const g of this.knownGroups.values()) {
         wastedBytes += g.size * (g.entries.length - 1)
@@ -226,7 +235,7 @@ export class ScanEngine {
         durationMs: Date.now() - startedAt,
         errors: this.errors,
         denied: this.denied + getHashPool().deniedCount,
-        tree
+        treeRev: this.treeRev
       }
       this.broadcaster('scan:done', summary)
       // 渲染层 invoke 路径直接消费 summary（事件路径可能被状态守卫拦截）
@@ -285,6 +294,8 @@ export class ScanEngine {
     this.foundPerTarget.delete(target)
     this.processedPerTarget.delete(target)
     this.purgeGroupsByPaths(deleted)
+    // 目录聚合/子级索引按存活条目全量重建（增量反扣代价高，一次性重算更稳）
+    this.rebuildDirs()
   }
 
   /** 从组中剔除已删除的路径，不足 2 个成员的组解散 */
@@ -619,23 +630,20 @@ export class ScanEngine {
         p = parent
       }
       this.addBytes(e.path, e.size, false, target)
+      // 直属文件索引增量维护 + 树版本递增（前端据此重取）
+      const parent = path.dirname(e.path)
+      const item: TreeNodeFile = { path: e.path, name: e.name, size: e.size, dupWasted: 0 }
+      const arr = this.dirFiles.get(parent)
+      if (arr) arr.push(item)
+      else this.dirFiles.set(parent, [item])
+      this.treeRev++
     }
-  }
-
-  /** 渐进体积树：节流 1s 重建一次（纯内存操作），挂在 progress 事件回流；
-   *  force 跳过节流立即推送（如移除目标后的基线） */
-  private emitProgressiveTree(force = false): ScanTreeNode[] | undefined {
-    const now = Date.now()
-    if (!force && now - this.lastTreeAt < 1000) return undefined
-    this.lastTreeAt = now
-    return this.buildTreeFrom(this.dirs)
   }
 
   private emitProgress(currentPath: string): void {
     const now = Date.now()
     if (now - this.lastProgressAt < PROGRESS_MS) return
     this.lastProgressAt = now
-    const tree = this.emitProgressiveTree()
     const progress: ScanProgress = {
       sessionId: this.sessionId,
       phase: this.phase,
@@ -645,12 +653,12 @@ export class ScanEngine {
       currentPath,
       percent: this.found > 0 ? Math.min(100, (this.processed / this.found) * 100) : 0,
       denied: this.denied + getHashPool().deniedCount,
+      treeRev: this.treeRev,
       targets: this.progressTargets.map((t) => {
         const total = this.foundPerTarget.get(t) ?? 0
         const processed = this.processedPerTarget.get(t) ?? 0
         return { path: t, percent: total > 0 ? Math.min(100, (processed / total) * 100) : 0 }
-      }),
-      ...(tree !== undefined ? { tree } : {})
+      })
     }
     this.broadcaster('scan:progress', progress)
   }
@@ -666,6 +674,9 @@ export class ScanEngine {
    */
   private rebuildDirs(): void {
     this.dirs = new Map()
+    this.dirFiles = new Map()
+    this.childDirs = new Map()
+    this.treeRev++
 
     // 1) 登记节点：目标根、真实祖先目录、压缩包合成目录链
     for (const target of this.coveredTargets) this.recordDir(target)
@@ -717,12 +728,29 @@ export class ScanEngine {
         }
       }
     }
+
+    // 4) 直属真实文件挂载（压缩包内条目不挂，其体积已走合成目录链）；
+    //    文件级重复占用由查询接口按 wastedMap 现算，不在此缓存
+    for (const e of this.entries.values()) {
+      if (e.containerPath !== null) continue
+      const item: TreeNodeFile = { path: e.path, name: e.name, size: e.size, dupWasted: 0 }
+      const parent = path.dirname(e.path)
+      const arr = this.dirFiles.get(parent)
+      if (arr) arr.push(item)
+      else this.dirFiles.set(parent, [item])
+    }
   }
 
   /** 显式指定父节点的登记（用于 `容器::包内路径` 这类合成目录，dirname 不适用） */
   private recordDirAt(p: string, parent: string, name: string): void {
     if (this.dirs.has(p)) return
     this.dirs.set(p, { parent, name, size: 0, dup: 0 })
+    // 子级索引（盘根 dirname 即自身，跳过自指）
+    if (parent !== p) {
+      const arr = this.childDirs.get(parent)
+      if (arr) arr.push(p)
+      else this.childDirs.set(parent, [p])
+    }
   }
 
   private recordDir(dir: string): void {
@@ -766,65 +794,124 @@ export class ScanEngine {
     }
   }
 
-  /** 由目录聚合记录构建体积树，子级按体积降序 */
-  private buildTree(): ScanTreeNode[] {
-    return this.buildTreeFrom(this.dirs)
+  // —— 体积树按需查询（渲染层拉取协议；数据权威在后端，前端只缓存展示）——
+
+  treeVersion(): number {
+    return this.treeRev
   }
 
-  private buildTreeFrom(dirs: Map<string, DirAgg>): ScanTreeNode[] {
-    const nodes = new Map<string, ScanTreeNode>()
-    for (const [p, rec] of dirs) {
-      nodes.set(p, {
-        name: rec.name,
-        path: p,
-        size: rec.size,
-        dupWasted: rec.dup,
-        children: [],
-        files: []
-      })
-    }
-    const roots: ScanTreeNode[] = []
-    for (const [p, rec] of dirs) {
-      const node = nodes.get(p)
-      if (!node) continue
-      // 盘根（如 D:\）的 dirname 是它自身——自指视为根，否则永远进不了 roots
-      const parent = rec.parent !== p ? nodes.get(rec.parent) : undefined
-      if (parent) parent.children.push(node)
-      else roots.push(node)
-    }
-    // 真实文件挂到父目录节点（压缩包内条目不挂，其体积已走合成目录链）；
-    // 文件级重复占用 = 该文件在各重复组中作为非保留副本的体积之和
-    const wastedByPath = new Map<string, number>()
+  /** 文件级重复占用：该文件在各重复组中作为非保留副本的体积之和（按版本缓存） */
+  private wastedMap(): Map<string, number> {
+    if (this.wastedCache && this.wastedCache.rev === this.treeRev) return this.wastedCache.map
+    const map = new Map<string, number>()
     for (const g of this.knownGroups.values()) {
       if (g.entries.length < 2) continue
       const kept = g.entries.reduce((a, b) => (a.mtime <= b.mtime ? a : b))
       for (const e of g.entries) {
         if (e.path === kept.path || e.containerPath !== null) continue
-        wastedByPath.set(e.path, (wastedByPath.get(e.path) ?? 0) + e.size)
+        map.set(e.path, (map.get(e.path) ?? 0) + e.size)
       }
     }
-    const fileGroups = new Map<string, TreeNodeFile[]>()
-    for (const e of this.entries.values()) {
-      if (e.containerPath !== null) continue
-      const item: TreeNodeFile = {
-        path: e.path,
-        name: e.name,
-        size: e.size,
-        dupWasted: wastedByPath.get(e.path) ?? 0
+    this.wastedCache = { rev: this.treeRev, map }
+    return map
+  }
+
+  private rowOf(p: string, files: TreeNodeFile[] | undefined): TreeDirRowData {
+    const rec = this.dirs.get(p)
+    return {
+      path: p,
+      name: rec?.name ?? p,
+      size: rec?.size ?? 0,
+      dupWasted: rec?.dup ?? 0,
+      childDirs: this.childDirs.get(p)?.length ?? 0,
+      fileCount: files?.length ?? 0,
+      fileBytes: files?.reduce((s, f) => s + f.size, 0) ?? 0
+    }
+  }
+
+  private stats(): TreeStats {
+    let totalSize = 0
+    for (const e of this.entries.values()) totalSize += e.size
+    let totalDup = 0
+    for (const g of this.knownGroups.values()) {
+      if (g.entries.length >= 2) totalDup += g.size * (g.entries.length - 1)
+    }
+    return { totalSize, totalDup, dirCount: this.dirs.size }
+  }
+
+  private sortDirRows(rows: TreeDirRowData[], sortKey: TreeSortKey, desc: boolean): void {
+    const dir = desc ? -1 : 1
+    rows.sort((a, b) => {
+      if (sortKey === 'name') {
+        return dir * a.name.localeCompare(b.name, undefined, { numeric: true })
       }
-      const parent = path.dirname(e.path)
-      const arr = fileGroups.get(parent)
-      if (arr) arr.push(item)
-      else fileGroups.set(parent, [item])
+      if (sortKey === 'dup') return dir * (a.dupWasted - b.dupWasted)
+      return dir * (a.size - b.size)
+    })
+  }
+
+  private fileRowsOf(
+    dir: string,
+    wasted: Map<string, number>
+  ): Array<{ path: string; name: string; size: number; dupWasted: number }> {
+    return (this.dirFiles.get(dir) ?? []).map((f) => ({
+      path: f.path,
+      name: f.name,
+      size: f.size,
+      dupWasted: wasted.get(f.path) ?? 0
+    }))
+  }
+
+  /** 根级行：每个已纳入同步的目标一行（嵌套目标同一数据多处引用） */
+  treeRoots(sortKey: TreeSortKey, desc: boolean): TreeChildrenReply {
+    const rows = [...this.coveredTargets]
+      .filter((t) => this.dirs.has(t))
+      .map((t) => this.rowOf(t, this.dirFiles.get(t)))
+    this.sortDirRows(rows, sortKey, desc)
+    return { rev: this.treeRev, dirs: rows, agg: null, stats: this.stats() }
+  }
+
+  /** 某目录的子目录行 + 直属文件聚合行（无子目录的目录不返回聚合，前端逐文件展开） */
+  treeChildren(dir: string, sortKey: TreeSortKey, desc: boolean): TreeChildrenReply | null {
+    if (!this.dirs.has(dir)) return null
+    const wasted = this.wastedMap()
+    const rows = (this.childDirs.get(dir) ?? []).map((p) => this.rowOf(p, this.dirFiles.get(p)))
+    this.sortDirRows(rows, sortKey, desc)
+    const files = this.fileRowsOf(dir, wasted)
+    const agg =
+      rows.length > 0 && files.length > 0
+        ? {
+            count: files.length,
+            size: files.reduce((s, f) => s + f.size, 0),
+            dupWasted: files.reduce((s, f) => s + f.dupWasted, 0)
+          }
+        : null
+    return { rev: this.treeRev, dirs: rows, agg, stats: this.stats() }
+  }
+
+  treeFiles(
+    dir: string,
+    sortKey: TreeSortKey,
+    desc: boolean,
+    offset: number,
+    limit: number
+  ): TreeFilesReply | null {
+    if (!this.dirs.has(dir)) return null
+    const rows = this.fileRowsOf(dir, this.wastedMap())
+    const dirFlag = desc ? -1 : 1
+    rows.sort((a, b) => {
+      if (sortKey === 'name') {
+        return dirFlag * a.name.localeCompare(b.name, undefined, { numeric: true })
+      }
+      if (sortKey === 'dup') return dirFlag * (a.dupWasted - b.dupWasted)
+      return dirFlag * (a.size - b.size)
+    })
+    const start = Math.max(0, offset)
+    return {
+      rev: this.treeRev,
+      total: rows.length,
+      rows: rows.slice(start, start + Math.max(1, limit))
     }
-    for (const [p, arr] of fileGroups) {
-      const node = nodes.get(p)
-      if (node) node.files = arr.sort((a, b) => b.size - a.size)
-    }
-    const bySize = (a: ScanTreeNode, b: ScanTreeNode): number => b.size - a.size
-    for (const node of nodes.values()) node.children.sort(bySize)
-    roots.sort(bySize)
-    return roots
   }
 
   /** 阶梯比较一个桶，返回其中的全部重复组（可能多于一个） */

@@ -1,5 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import type { AppSettings, CleanAction, ScanSettings } from '../shared/types'
+import type { AppSettings, CleanAction, ScanSettings, TreeSortKey } from '../shared/types'
 import { runClean } from './clean'
 import { detectCapabilities } from './capabilities'
 import { elevateAndRestart } from './elevate'
@@ -46,4 +46,15 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('app:set-settings', (_e, patch: Partial<AppSettings>) => saveSettings(patch))
   ipcMain.handle('app:capabilities', () => detectCapabilities())
   ipcMain.handle('app:file-icons', (_e, paths: string[]) => fileIcons(paths))
+  ipcMain.handle('tree:roots', (_e, sortKey: TreeSortKey, desc: boolean) =>
+    engine.treeRoots(sortKey, desc)
+  )
+  ipcMain.handle('tree:children', (_e, dir: string, sortKey: TreeSortKey, desc: boolean) =>
+    engine.treeChildren(dir, sortKey, desc)
+  )
+  ipcMain.handle(
+    'tree:files',
+    (_e, dir: string, sortKey: TreeSortKey, desc: boolean, offset: number, limit: number) =>
+      engine.treeFiles(dir, sortKey, desc, offset, limit)
+  )
 }

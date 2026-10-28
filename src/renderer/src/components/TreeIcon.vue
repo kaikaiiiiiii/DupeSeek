@@ -14,7 +14,7 @@ const props = defineProps<{
 
 const icons = useIconStore()
 onMounted(() => {
-  if (props.kind !== 'aggregate') icons.request(props.path)
+  if (props.path && props.kind !== 'aggregate') icons.request(props.path)
 })
 
 const src = computed(() => icons.cache[props.path] ?? '')

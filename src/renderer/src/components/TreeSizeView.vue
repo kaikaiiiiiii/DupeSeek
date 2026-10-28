@@ -2,12 +2,15 @@
   <div class="treesize">
     <div class="toolbar">
       <span class="stat">
-        {{ treesize.dirCount }} 个目录 · 总大小 {{ formatBytes(treesize.totalSize) }} · 重复占用
-        <span :class="{ dup: treesize.totalDup > 0 }">{{ formatBytes(treesize.totalDup) }}</span>
+        {{ treesize.stats.dirCount }} 个目录 · 总大小 {{ formatBytes(treesize.stats.totalSize) }} ·
+        重复占用
+        <span :class="{ dup: treesize.stats.totalDup > 0 }">{{
+          formatBytes(treesize.stats.totalDup)
+        }}</span>
       </span>
       <button
         class="btn small"
-        :disabled="treesize.tree.length === 0"
+        :disabled="treesize.rows.length === 0"
         @click="treesize.expandAll()"
       >
         全部展开
