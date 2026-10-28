@@ -5,6 +5,11 @@
 
 ## 未发布
 
+### 新增
+- 内置三平台 unrar（Windows / Linux / macOS）：Linux/macOS 的 RAR 内容比对
+  升级为与 Windows 一致的完整四级校验；设置页新增「能力检测」，展示 RAR
+  读取能力与本机是否安装 RAR 压缩工具（WinRAR/rar，仅检测展示）
+
 ### 变更
 - 空间分析列表改为 TreeSize Free 风格体积条：以所在层级的最大体积为 100%，
   按体积等比例绘制黄色底条，同层级左对齐
