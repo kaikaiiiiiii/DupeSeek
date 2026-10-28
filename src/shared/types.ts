@@ -116,6 +116,16 @@ export interface AppSettings {
   resumeScan?: boolean
 }
 
+/** 本机能力检测结果（app:capabilities），仅存在性探测 */
+export interface AppCapabilities {
+  rar: {
+    /** 随应用分发的 unrar 路径（RAR 内容读取默认能力）；null 为缺失 */
+    bundledExtract: string | null
+    /** 本机安装的 RAR 压缩工具（WinRAR/rar）路径；null 为未检测到 */
+    compress: string | null
+  }
+}
+
 /** 渲染层通过 preload 可用的 API，定义见 docs/IPC.md */
 export interface DupeSeekApi {
   selectTargets(kind: 'dir' | 'file' | 'both'): Promise<string[] | null>
@@ -131,6 +141,8 @@ export interface DupeSeekApi {
   elevate(): Promise<boolean>
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  /** 本机能力检测（RAR 读取/压缩工具就位情况） */
+  capabilities(): Promise<AppCapabilities>
 
   onScanProgress(cb: (p: ScanProgress) => void): () => void
   onScanGroup(cb: (p: { sessionId: string; groups: DupeGroup[] }) => void): () => void

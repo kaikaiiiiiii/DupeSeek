@@ -8,11 +8,20 @@ import { path7za } from '7zip-bin'
 import { createExtractorFromFile } from 'node-unrar-js'
 import type { ArchiveType } from '../../shared/types'
 
-/** 原生 unrar.exe（resources/bin 随应用分发），由主进程经环境变量告知位置 */
-function unrarExe(): string | null {
+/** 随应用分发的原生 unrar（resources/bin，三平台各一份），缺失返回 null */
+export function unrarExe(): string | null {
   const bin = process.env['DUPESEEK_BIN_DIR']
   if (!bin) return null
-  const p = bin + '\\UnRAR.exe'
+  const p =
+    process.platform === 'win32'
+      ? path.join(bin, 'UnRAR.exe')
+      : path.join(
+          bin,
+          'unrar',
+          process.platform === 'darwin' ? 'mac' : 'linux',
+          process.arch,
+          'unrar'
+        )
   return fs.existsSync(p) ? p : null
 }
 

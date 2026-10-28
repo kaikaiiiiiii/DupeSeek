@@ -2,6 +2,25 @@
 
 面向用户的事实陈述：DupeSeek 官方构建覆盖 **Windows + Linux**（release 产物：NSIS 安装包 / zip 绿色版 / AppImage / deb）。**macOS 不出包**——`build/icon.icns` 已就绪，但 CI 无 mac 构建目标，运行从未在真机验证。核心链路（枚举 → 哈希 → 分桶比对 → 重复分组 → TreeSize）为纯 Node/Electron 实现，本身跨平台一致；差异集中在二进制依赖与文件系统特性上，逐项如下。
 
+## 各平台处理方式（定案）
+
+### Windows
+- 枚举：Everything（es.exe）优先，未运行/未收录逐目标回退 fs walk。
+- RAR：内置 `UnRAR.exe`（7.30 beta 1）——WASM 清单 + crc32 元数据 + 原生解压，完整四级校验。
+- 权限不足：提供 UAC 提权重扫（`app:elevate`，PowerShell RunAs + handover 交接）。
+- reparse point：junction / 符号链接 / 云占位经 `/aL` 清单整树剔除（防假重复组）。
+
+### Linux
+- 枚举：fs walk（无 Everything 通道，非 NTFS 场景一致）。
+- RAR：内置 `unrar/linux/x64/unrar`（7.23），四级校验与 Windows 对齐。
+- 权限不足：**不做提权，计入 denied**（定案，维持现状）。
+- 符号链接：回退通道静默跳过（定案，维持现状，见 KI-4）。
+
+### macOS
+- 无官方产物、未真机验证；能力设计与 Linux 对应项一致。
+- RAR：内置 `unrar/mac/arm64/unrar`（7.23）/ `unrar/mac/x64/unrar`（7.12，Intel 已停止新版分发）。
+- 未来出包前需补：窗口 icon 接线（现为 Linux-only 分支）、签名/公证。
+
 ## 平台差异
 
 | 能力 | Windows | Linux | macOS |
@@ -10,18 +29,18 @@
 | 枚举：fs walk 回退 | ✓ | ✓ | 未验证 |
 | zip/7z 内容比对（7zip-bin） | ✓ | ✓ | 理论 ✓（7zip-bin 含 darwin 二进制） |
 | RAR 列表（node-unrar-js WASM） | ✓ | ✓ | 理论 ✓ |
-| RAR 解压（原生 UnRAR.exe） | ✓ | **✗ 见 KI-1** | ✗ |
+| RAR 解压（内置原生 unrar） | ✓ | ✓ | ✓（未真机验证） |
 | UAC 提权（app:elevate） | ✓ | ✗ 见 KI-2 | ✗ |
 | 打包产物 | NSIS + zip | AppImage + deb | 无 |
 
-### KI-1 Linux/mac 上 RAR 内容比对止步于元数据级
-原生 UnRAR.exe 仅随 Windows 分发（`resources/bin`），且 `unrarExe()` 硬编码拼 `\UnRAR.exe`（反斜杠 + .exe，Linux 必然落空）。降级行为：WASM 清单与 crc32 元数据比对正常；`hashRarEntry` 返回 null、`extractWholeRar` 返回 false——RAR 内文件**无法解压计算 headMD5/fullMD5**，同 size 同 crc32 即视为重复（比 zip/7z 少两级校验）。不崩溃、不误报目录。修复方向：引入分平台 unrar 二进制（rarlab 有 linux/mac 版）或改用 libarchive/bsdtar。
+### KI-1 ~~Linux/mac 上 RAR 内容比对止步于元数据级~~（已解决）
+三平台原生 unrar 已随应用内置（`resources/bin/unrar/`，版本与来源见该目录 README.md），`unrarExe()` 按 `platform/arch` 解析，Linux/macOS 的 RAR 内容比对升级为与 Windows 一致的完整四级校验（清单 → crc32 → 解压 headMD5 → fullMD5）。RAR **压缩**能力不在内置范围：设置页「能力检测」展示本机是否安装 WinRAR/rar（Windows 查 Program Files 常见位置 + PATH；unix 查 PATH），仅作展示、应用不做压缩。遗留注意：macGatekeeper 对未签名应用内二进制的隔离属性（xattr）需在真机构建时验证；应用本身未签名，出包时一并处理。
 
 ### KI-2 提权重扫仅 Windows
-权限不足时的「提权重扫」走 PowerShell `Start-Process -Verb RunAs`（UAC）。Linux/mac 无此路径：不可读文件/目录计入 denied 计数并在结果中标注，扫描不中断。
+权限不足时的「提权重扫」走 PowerShell `Start-Process -Verb RunAs`（UAC）。Linux/mac 无此路径：不可读文件/目录计入 denied 计数并在结果中标注，扫描不中断。**定案：Linux/mac 不做提权，denied 即可。**
 
 ### KI-3 mac 未验证项清单
-窗口 icon 仅传 Linux 分支（`src/main/index.ts`）；签名/公证未配置；UnRAR 无 darwin 二进制（同 KI-1）；`window-all-closed` 行为符合 mac 惯例（关窗不退出）。
+窗口 icon 仅传 Linux 分支（`src/main/index.ts`）；签名/公证未配置；unrar 已内置（x64 7.12 / arm64 7.23）但未经真机验证；`window-all-closed` 行为符合 mac 惯例（关窗不退出）。
 
 ## 文件系统一致性
 
@@ -33,7 +52,7 @@
 | APFS | 未验证（无 mac 产物） |
 
 ### KI-4 回退通道静默跳过符号链接（含 Windows 目录符号链接）
-fs walk 按 dirent 类型分流：符号链接条目 `isDirectory()`/`isFile()` 均为 false，**被静默跳过**——链接所指的真实内容不参与扫描。副作用是良性的：无循环穿越风险（`/a` → `b` → `/a` 类环不会死循环）、无假重复组；但用户预期里"链接也是文件"的场景会漏扫。若将来要支持，须引入 visited(inode) 集合防环。
+fs walk 按 dirent 类型分流：符号链接条目 `isDirectory()`/`isFile()` 均为 false，**被静默跳过**——链接所指的真实内容不参与扫描。副作用是良性的：无循环穿越风险（`/a` → `b` → `/a` 类环不会死循环）、无假重复组；但用户预期里"链接也是文件"的场景会漏扫。若将来要支持，须引入 visited(inode) 集合防环。**定案：维持现状。**
 
 ### KI-5 大小写敏感性按精确匹配
 L0 桶键与去重键使用精确文件名（大小写敏感比较）。NTFS 虽大小写不敏感，但同目录不能共存仅大小写不同的两个名字，跨目录同名不同大小写属不同文件、由 md5 阶梯正确裁决——无已知问题；列此条仅为固化该结论。

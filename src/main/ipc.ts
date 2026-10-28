@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { AppSettings, CleanAction, ScanSettings } from '../shared/types'
 import { runClean } from './clean'
+import { detectCapabilities } from './capabilities'
 import { elevateAndRestart } from './elevate'
 import { loadSettings, saveSettings } from './settings'
 import { ScanEngine } from './scan/engine'
@@ -42,4 +43,5 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   ipcMain.handle('app:get-settings', () => loadSettings())
   ipcMain.handle('app:set-settings', (_e, patch: Partial<AppSettings>) => saveSettings(patch))
+  ipcMain.handle('app:capabilities', () => detectCapabilities())
 }
