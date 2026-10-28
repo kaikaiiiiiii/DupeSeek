@@ -3,12 +3,14 @@
 import esbuild from 'esbuild'
 import path from 'path'
 
+const entry = process.argv[2] ?? 'diag-lazy.mts'
+
 await esbuild.build({
-  entryPoints: ['tools/diag-lazy.mts'],
+  entryPoints: ['tools/' + entry],
   bundle: true,
   platform: 'node',
   format: 'esm',
-  outfile: 'out/diag-lazy.mjs',
+  outfile: 'out/' + entry.replace(/\.mts$/, '.mjs'),
   external: ['7zip-bin', 'node-unrar-js'],
   alias: { electron: path.resolve('tools/electron-stub.mjs') },
   plugins: [

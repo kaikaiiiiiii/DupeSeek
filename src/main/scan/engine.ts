@@ -150,6 +150,7 @@ export class ScanEngine {
   private childDirs = new Map<string, string[]>()
   /** 文件级重复占用缓存（随 knownGroups 变化按版本失效） */
   private wastedCache: { rev: number; map: Map<string, number> } | null = null
+  private statsCache: { rev: number; stats: TreeStats } | null = null
 
   // —— 持久会话状态 ——
   private entries = new Map<string, FileEntry>()
@@ -215,6 +216,12 @@ export class ScanEngine {
 
       // 新增：枚举 → 触碰桶比较（只有 L0 同桶的新条目触发哈希）
       if (addList.length > 0) {
+        // 先登记新目标根目录：es.exe 全量导出完成前（可能数十秒）新根行
+        // 即以空树形态出现并随枚举实时生长，而不是一直停在加载态
+        for (const t of addList) {
+          this.recordDir(t)
+          this.treeRev++
+        }
         const lister = canon.useEverything ? await createEverythingLister() : null
         console.info(
           `[scan] 枚举通道（${addList.length} 个新增目标）：${lister ? 'Everything (es.exe)' : settings.useEverything ? 'fs walk（Everything 不可用）' : 'fs walk（已在设置中禁用 Everything）'}`
@@ -866,13 +873,17 @@ export class ScanEngine {
   }
 
   private stats(): TreeStats {
+    // O(entries) 全量扫描，按版本缓存——枚举期每次查询都带统计时这里最热
+    if (this.statsCache && this.statsCache.rev === this.treeRev) return this.statsCache.stats
     let totalSize = 0
     for (const e of this.entries.values()) totalSize += e.size
     let totalDup = 0
     for (const g of this.knownGroups.values()) {
       if (g.entries.length >= 2) totalDup += g.size * (g.entries.length - 1)
     }
-    return { totalSize, totalDup, dirCount: this.dirs.size }
+    const stats = { totalSize, totalDup, dirCount: this.dirs.size }
+    this.statsCache = { rev: this.treeRev, stats }
+    return stats
   }
 
   private sortDirRows(rows: TreeDirRowData[], sortKey: TreeSortKey, desc: boolean): void {
