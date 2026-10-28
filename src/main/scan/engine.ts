@@ -96,8 +96,12 @@ type HashSlot = 'headmd5' | 'fullmd5'
  * 有状态的增量扫描引擎。
  *
  * 持久会话状态（跨操作存活）：
- * - targetEntries：每个目标的条目清单（哈希记忆化挂在条目对象上，
- *   已算过的 headMD5/fullMD5 不再重算、不重复读盘）；
+ * - entries：全局条目存储，路径键唯一——嵌套目标（如 D:\ 与 D:\Coding 同时
+ *   作为目标）覆盖同一文件时只存一份，杜绝"自己配自己"的假重复与 md5 风暴；
+ *   哈希记忆化挂在条目对象上，已算过的 headMD5/fullMD5 不再重算、不重复读盘；
+ * - owners：条目 → 归属目标（嵌套覆盖时归属先注册者；移除目标时向剩余
+ *   覆盖者重归属，无人覆盖才删除）；
+ * - coveredTargets：本轮会话已纳入同步的目标集合；
  * - knownGroups：已确认的重复组（key → 组，组内为全量成员）。
  *
  * 操作模型：
@@ -128,7 +132,9 @@ export class ScanEngine {
   private lastTreeAt = 0
 
   // —— 持久会话状态 ——
-  private targetEntries = new Map<string, FileEntry[]>()
+  private entries = new Map<string, FileEntry>()
+  private owners = new Map<string, string>()
+  private coveredTargets = new Set<string>()
   private knownGroups = new Map<string, DupeGroup>()
 
   constructor(broadcaster: Broadcaster) {
@@ -164,8 +170,8 @@ export class ScanEngine {
     if (settings.targets.length === 0) throw new Error('请先添加扫描目标')
 
     const requested = new Set(settings.targets)
-    const addList = settings.targets.filter((t) => !this.targetEntries.has(t))
-    const removeList = [...this.targetEntries.keys()].filter((t) => !requested.has(t))
+    const addList = settings.targets.filter((t) => !this.coveredTargets.has(t))
+    const removeList = [...this.coveredTargets].filter((t) => !requested.has(t))
 
     this.running = true
     this.canceled = false
@@ -181,13 +187,8 @@ export class ScanEngine {
     const startedAt = Date.now()
 
     try {
-      // 移除：纯内存清理（条目、组、进度），零磁盘 I/O
-      for (const t of removeList) {
-        this.targetEntries.delete(t)
-        this.foundPerTarget.delete(t)
-        this.processedPerTarget.delete(t)
-      }
-      this.purgeGroupsByTargets(removeList)
+      // 移除：纯内存清理（条目重归属/删除、组剔除、进度），零磁盘 I/O
+      for (const t of removeList) this.removeTarget(t)
       // 渐进树基线：重置节流，让枚举期第一个 progress 事件立即携带
       // 当前的全量树（移除目标后的体积变化随之即时可见）
       this.lastTreeAt = 0
@@ -215,8 +216,7 @@ export class ScanEngine {
       for (const g of this.knownGroups.values()) {
         wastedBytes += g.size * (g.entries.length - 1)
       }
-      let totalEntries = 0
-      for (const list of this.targetEntries.values()) totalEntries += list.length
+      const totalEntries = this.entries.size
       const summary: ScanSummary = {
         sessionId,
         canceled: this.canceled,
@@ -240,11 +240,62 @@ export class ScanEngine {
   /** 整体重扫：清空会话状态后按当前目标全量扫描 */
   async rescanAll(settings: ScanSettings): Promise<ScanSummary> {
     if (this.running) throw new Error('已有扫描任务在进行中')
-    this.targetEntries.clear()
+    this.entries.clear()
+    this.owners.clear()
+    this.coveredTargets.clear()
     this.knownGroups.clear()
     this.foundPerTarget.clear()
     this.processedPerTarget.clear()
     return this.syncTargets(settings)
+  }
+
+  /** 条目主键：Windows 路径大小写不敏感按小写归一，其余平台原样 */
+  private keyOf(p: string): string {
+    return process.platform === 'win32' ? p.toLowerCase() : p
+  }
+
+  /** 注册条目：路径已存在（被其它目标覆盖）返回 false——嵌套目标去重的唯一入口 */
+  private registerEntry(e: FileEntry, target: string): boolean {
+    const key = this.keyOf(e.path)
+    if (this.entries.has(key)) return false
+    this.entries.set(key, e)
+    this.owners.set(key, target)
+    this.addEntryToDirs(e, target)
+    return true
+  }
+
+  /** 移除目标：其条目若仍被剩余目标覆盖则改归属，否则删除并从组中剔除 */
+  private removeTarget(target: string): void {
+    this.coveredTargets.delete(target)
+    const remaining = [...this.coveredTargets]
+    const deleted = new Set<string>()
+    for (const [key, owner] of this.owners) {
+      if (owner !== target) continue
+      const cover = remaining.find((t) => {
+        const lt = this.keyOf(t)
+        return key === lt || key.startsWith(lt + '\\')
+      })
+      if (cover) this.owners.set(key, cover)
+      else {
+        this.entries.delete(key)
+        this.owners.delete(key)
+        deleted.add(key)
+      }
+    }
+    this.foundPerTarget.delete(target)
+    this.processedPerTarget.delete(target)
+    this.purgeGroupsByPaths(deleted)
+  }
+
+  /** 从组中剔除已删除的路径，不足 2 个成员的组解散 */
+  private purgeGroupsByPaths(keys: Set<string>): void {
+    if (keys.size === 0) return
+    for (const [k, g] of this.knownGroups) {
+      const kept = g.entries.filter((e) => !keys.has(this.keyOf(e.path)))
+      if (kept.length === g.entries.length) continue
+      if (kept.length >= 2) this.knownGroups.set(k, { ...g, entries: kept })
+      else this.knownGroups.delete(k)
+    }
   }
 
   /** 枚举新增目标（Everything 优先，逐目标回退 fs walk） */
@@ -258,15 +309,19 @@ export class ScanEngine {
 
     for (const target of addList) {
       if (this.canceled) break
-      const entries: FileEntry[] = []
+      const added: FileEntry[] = []
+      // 注册闭包：去重判定 + 会话计数（嵌套目标覆盖的路径在此被挡下）
+      const register = (e: FileEntry): boolean => {
+        if (!this.registerEntry(e, target)) return false
+        added.push(e)
+        this.found++
+        return true
+      }
       const ctx = {
         settings,
         canceled: (): boolean => this.canceled,
         onEntry: (e: FileEntry): void => {
-          entries.push(e)
-          this.found++
-          // 渐进体积树：fs walk 通道同样逐条登记，枚举期即可见
-          this.addEntryToDirs(e, target)
+          if (!register(e)) return
           this.emitProgress(e.path)
           lastPath.value = e.path
         },
@@ -282,7 +337,7 @@ export class ScanEngine {
       let handled = false
       if (lister) {
         try {
-          handled = await this.listViaEverything(lister, target, settings, entries, lastPath)
+          handled = await this.listViaEverything(lister, target, settings, register, lastPath)
         } catch (err) {
           console.warn(`[scan] Everything 枚举失败，回退 walk：${target}`, err)
         }
@@ -291,22 +346,22 @@ export class ScanEngine {
 
       // 压缩包条目枚举（容器来自本目标的条目）
       if (settings.scanArchives) {
-        await this.listArchiveEntries(settings, entries, lastPath)
+        await this.listArchiveEntries(settings, added, register, lastPath)
       }
 
-      this.targetEntries.set(target, entries)
-      this.foundPerTarget.set(target, entries.length)
+      this.foundPerTarget.set(target, added.length)
     }
   }
 
   /** 枚举扫描到的压缩包内条目；容器本身也是普通候选，条目按 `容器::包内路径` 建条 */
   private async listArchiveEntries(
     settings: ScanSettings,
-    entries: FileEntry[],
+    added: FileEntry[],
+    register: (e: FileEntry) => boolean,
     lastPath: { value: string }
   ): Promise<void> {
     const pool = getHashPool()
-    const containers = entries.filter(
+    const containers = added.filter(
       (e) => e.containerPath === null && archiveTypeOf(e.class) !== null
     )
     await pMap(containers, ARCHIVE_LIST_CONCURRENCY, async (c) => {
@@ -318,7 +373,7 @@ export class ScanEngine {
         for (const m of metas) {
           const entry = buildArchiveEntry(c, type, m, settings)
           if (entry) {
-            entries.push(entry)
+            if (!register(entry)) continue
             lastPath.value = entry.path
           }
         }
@@ -335,20 +390,21 @@ export class ScanEngine {
    */
   private async hashTouched(settings: ScanSettings, addList: string[]): Promise<void> {
     const touched = new Set<string>()
-    for (const t of addList) {
-      for (const e of this.targetEntries.get(t) ?? []) touched.add(this.l0Key(e, settings))
+    const addSet = new Set(addList)
+    // 触碰桶 = 新增目标所拥有条目的 L0 键（嵌套覆盖的既有条目不重触发哈希）
+    for (const [key, e] of this.entries) {
+      const owner = this.owners.get(key)
+      if (owner !== undefined && addSet.has(owner)) touched.add(this.l0Key(e, settings))
     }
 
     // 全量条目分桶，只保留被触碰的桶
     const buckets = new Map<string, FileEntry[]>()
-    for (const list of this.targetEntries.values()) {
-      for (const e of list) {
-        const key = this.l0Key(e, settings)
-        if (!touched.has(key)) continue
-        const b = buckets.get(key)
-        if (b) b.push(e)
-        else buckets.set(key, [e])
-      }
+    for (const e of this.entries.values()) {
+      const key = this.l0Key(e, settings)
+      if (!touched.has(key)) continue
+      const b = buckets.get(key)
+      if (b) b.push(e)
+      else buckets.set(key, [e])
     }
     this.found = 0
     for (const b of buckets.values()) this.found += b.length
@@ -369,7 +425,7 @@ export class ScanEngine {
       if (this.canceled) break
       this.processed += bucket.length
       for (const e of bucket) {
-        const t = this.targetOf(e, settings.targets)
+        const t = this.targetOf(e)
         if (t) this.processedPerTarget.set(t, (this.processedPerTarget.get(t) ?? 0) + 1)
       }
 
@@ -386,12 +442,12 @@ export class ScanEngine {
           entries: bucket
         }
         this.knownGroups.set(group.key, group)
-        this.attributeDupToDirs(group, settings.targets)
+        this.attributeDupToDirs(group)
         out.push(group)
       } else {
         for (const group of await this.resolveBucket(bucket, tempPaths)) {
           this.knownGroups.set(group.key, group)
-          this.attributeDupToDirs(group, settings.targets)
+          this.attributeDupToDirs(group)
           out.push(group)
         }
       }
@@ -402,14 +458,14 @@ export class ScanEngine {
   }
 
   /** 组确认后把重复占用计入渐进树（哈希期增量归集，与 rebuildDirs 第3步同语义） */
-  private attributeDupToDirs(group: DupeGroup, targets: string[]): void {
+  private attributeDupToDirs(group: DupeGroup): void {
     const kept = group.entries.reduce((a, b) => (a.mtime <= b.mtime ? a : b))
     for (const e of group.entries) {
       if (e.path === kept.path) continue
       if (e.containerPath !== null && e.entryPath !== null) {
         this.addArchiveBytes(e.containerPath, e.entryPath, e.size, true)
       } else {
-        const t = this.targetOf(e, targets)
+        const t = this.targetOf(e)
         this.addBytes(e.path, e.size, true, t ?? '')
       }
     }
@@ -453,16 +509,14 @@ export class ScanEngine {
       const ok = await pool.rarExtract(container, tempRoot)
       if (!ok) continue
       // 该容器下所有参与比较的 rar 条目都映射到临时文件
-      for (const list of this.targetEntries.values()) {
-        for (const e of list) {
-          if (e.archiveType !== 'rar' || e.containerPath !== container || e.entryPath === null)
-            continue
-          const temp = path.join(tempRoot, e.entryPath)
-          try {
-            if (fs.statSync(temp).isFile()) tempPaths.set(e.path, temp)
-          } catch {
-            // 加密/损坏条目解不出，哈希阶段按独立文件跳过
-          }
+      for (const e of this.entries.values()) {
+        if (e.archiveType !== 'rar' || e.containerPath !== container || e.entryPath === null)
+          continue
+        const temp = path.join(tempRoot, e.entryPath)
+        try {
+          if (fs.statSync(temp).isFile()) tempPaths.set(e.path, temp)
+        } catch {
+          // 加密/损坏条目解不出，哈希阶段按独立文件跳过
         }
       }
     }
@@ -474,7 +528,7 @@ export class ScanEngine {
     lister: EverythingLister,
     target: string,
     settings: ScanSettings,
-    entries: FileEntry[],
+    register: (e: FileEntry) => boolean,
     lastPath: { value: string }
   ): Promise<boolean> {
     const st = await fs.promises.lstat(target)
@@ -532,10 +586,7 @@ export class ScanEngine {
         headmd5: null,
         fullmd5: null
       }
-      entries.push(entry)
-      // 渐进体积树：登记祖先目录并累加体积（与 rebuildDirs 同语义的增量版），
-      // 节流后的 progress 事件让树在枚举期实时生长
-      this.addEntryToDirs(entry, target)
+      if (!register(entry)) continue
       this.emitProgress(entry.path)
       lastPath.value = entry.path
     }
@@ -604,34 +655,9 @@ export class ScanEngine {
     this.broadcaster('scan:progress', progress)
   }
 
-  /** 条目归属的扫描目标（最长前缀；包内条目按容器路径归属） */
-  private targetOf(entry: FileEntry, targets: string[]): string | null {
-    const root = (entry.containerPath ?? entry.path).toLowerCase()
-    let best: string | null = null
-    for (const t of targets) {
-      const lt = t.toLowerCase()
-      if (root === lt || root.startsWith(lt + '\\')) {
-        if (best === null || lt.length > best.length) best = t
-      }
-    }
-    return best
-  }
-
-  /** 移除目标后清理 knownGroups：剔除其成员，不足 2 个的组解散 */
-  private purgeGroupsByTargets(targets: string[]): void {
-    if (targets.length === 0) return
-    for (const [key, g] of this.knownGroups) {
-      const kept = g.entries.filter((e) => {
-        const root = (e.containerPath ?? e.path).toLowerCase()
-        return !targets.some((t) => {
-          const lt = t.toLowerCase()
-          return root === lt || root.startsWith(lt + '\\')
-        })
-      })
-      if (kept.length === g.entries.length) continue
-      if (kept.length >= 2) this.knownGroups.set(key, { ...g, entries: kept })
-      else this.knownGroups.delete(key)
-    }
+  /** 条目归属的目标（注册时确定；移除目标时已向剩余覆盖者重归属） */
+  private targetOf(entry: FileEntry): string | null {
+    return this.owners.get(this.keyOf(entry.path)) ?? null
   }
 
   /**
@@ -642,43 +668,38 @@ export class ScanEngine {
     this.dirs = new Map()
 
     // 1) 登记节点：目标根、真实祖先目录、压缩包合成目录链
-    for (const [target, list] of this.targetEntries) {
-      this.recordDir(target)
-      const stop = target.toLowerCase()
-      for (const e of list) {
-        if (e.containerPath !== null && e.entryPath !== null) {
-          const root = e.containerPath + '::'
-          this.recordDirAt(root, path.dirname(e.containerPath), path.basename(e.containerPath))
-          const segs = e.entryPath.split(/[\\/]/)
-          let p = root
-          for (let i = 0; i < segs.length - 1; i++) {
-            const next = p + '/' + segs[i]
-            this.recordDirAt(next, p, segs[i])
-            p = next
-          }
-        } else {
-          let p = path.dirname(e.path)
-          for (;;) {
-            const lp = p.toLowerCase()
-            if (lp === stop) break
-            if (!lp.startsWith(stop + '\\')) break
-            this.recordDir(p)
-            const parent = path.dirname(p)
-            if (parent === p) break
-            p = parent
-          }
+    for (const target of this.coveredTargets) this.recordDir(target)
+    for (const e of this.entries.values()) {
+      if (e.containerPath !== null && e.entryPath !== null) {
+        const root = e.containerPath + '::'
+        this.recordDirAt(root, path.dirname(e.containerPath), path.basename(e.containerPath))
+        const segs = e.entryPath.split(/[\\/]/)
+        let p = root
+        for (let i = 0; i < segs.length - 1; i++) {
+          const next = p + '/' + segs[i]
+          this.recordDirAt(next, p, segs[i])
+          p = next
+        }
+      } else {
+        const stop = (this.owners.get(this.keyOf(e.path)) ?? '').toLowerCase()
+        let p = path.dirname(e.path)
+        for (;;) {
+          const lp = p.toLowerCase()
+          if (lp === stop || stop === '' || !lp.startsWith(stop + '\\')) break
+          this.recordDir(p)
+          const parent = path.dirname(p)
+          if (parent === p) break
+          p = parent
         }
       }
     }
 
     // 2) 体积聚合
-    for (const [target, list] of this.targetEntries) {
-      for (const e of list) {
-        if (e.containerPath !== null && e.entryPath !== null) {
-          this.addArchiveBytes(e.containerPath, e.entryPath, e.size, false)
-        } else {
-          this.addBytes(e.path, e.size, false, target)
-        }
+    for (const e of this.entries.values()) {
+      if (e.containerPath !== null && e.entryPath !== null) {
+        this.addArchiveBytes(e.containerPath, e.entryPath, e.size, false)
+      } else {
+        this.addBytes(e.path, e.size, false, this.owners.get(this.keyOf(e.path)) ?? '')
       }
     }
 
@@ -691,7 +712,7 @@ export class ScanEngine {
         if (e.containerPath !== null && e.entryPath !== null) {
           this.addArchiveBytes(e.containerPath, e.entryPath, e.size, true)
         } else {
-          const target = this.targetOf(e, [...this.targetEntries.keys()])
+          const target = this.targetOf(e)
           this.addBytes(e.path, e.size, true, target ?? '')
         }
       }
@@ -783,20 +804,18 @@ export class ScanEngine {
       }
     }
     const fileGroups = new Map<string, TreeNodeFile[]>()
-    for (const list of this.targetEntries.values()) {
-      for (const e of list) {
-        if (e.containerPath !== null) continue
-        const item: TreeNodeFile = {
-          path: e.path,
-          name: e.name,
-          size: e.size,
-          dupWasted: wastedByPath.get(e.path) ?? 0
-        }
-        const parent = path.dirname(e.path)
-        const arr = fileGroups.get(parent)
-        if (arr) arr.push(item)
-        else fileGroups.set(parent, [item])
+    for (const e of this.entries.values()) {
+      if (e.containerPath !== null) continue
+      const item: TreeNodeFile = {
+        path: e.path,
+        name: e.name,
+        size: e.size,
+        dupWasted: wastedByPath.get(e.path) ?? 0
       }
+      const parent = path.dirname(e.path)
+      const arr = fileGroups.get(parent)
+      if (arr) arr.push(item)
+      else fileGroups.set(parent, [item])
     }
     for (const [p, arr] of fileGroups) {
       const node = nodes.get(p)
