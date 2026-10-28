@@ -8,6 +8,7 @@
   --accent: #2563eb;
   --accent-soft: #e8effd;
   --danger: #d43a3a;
+  --size-bar: rgba(250, 204, 21, 0.35);
 }
 
 * {

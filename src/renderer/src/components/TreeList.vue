@@ -5,6 +5,7 @@
         <div
           class="tree-row"
           :class="{ branch: (item as TreeRow).node.children.length > 0 }"
+          :style="barStyle(item as TreeRow)"
           @click="treesize.toggle((item as TreeRow).node.path)"
         >
           <span v-for="i in (item as TreeRow).depth" :key="i" class="indent-gap"></span>
@@ -50,6 +51,16 @@ import VirtualScrollList from './VirtualScrollList.vue'
 
 const treesize = useTreeSizeStore()
 const scan = useScanStore()
+
+/** 与 .tree-row 的 padding 及 .indent-gap 宽度保持一致 */
+const ROW_PAD = 10
+const INDENT = 16
+
+/** TreeSize 风格体积条：左缘对齐所在层级缩进，宽度按当前最大体积等比例 */
+function barStyle(row: TreeRow): Record<string, string> {
+  const pct = treesize.maxSize > 0 ? ((row.node.size / treesize.maxSize) * 100).toFixed(2) : '0.00'
+  return { '--bar-left': `${ROW_PAD + row.depth * INDENT}px`, '--bar-w': `${pct}%` }
+}
 </script>
 
 <style scoped>
@@ -66,6 +77,27 @@ const scan = useScanStore()
   border-bottom: 1px solid var(--border-light);
   box-sizing: border-box;
   user-select: none;
+  position: relative;
+}
+
+/* 体积条：黄底，长度为该行体积占当前可见最大体积的比例 */
+.tree-row::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: var(--bar-left, 10px);
+  width: var(--bar-w, 0%);
+  background: var(--size-bar);
+  border-radius: 2px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* 行内容抬到体积条之上 */
+.tree-row > * {
+  position: relative;
+  z-index: 1;
 }
 
 .tree-row:hover {

@@ -25,6 +25,11 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     return count
   })
 
+  /** 当前可见行中的最大体积，作为体积条的 100% 基准 */
+  const maxSize = computed(() =>
+    rows.value.reduce((m, r) => (r.node.size > m ? r.node.size : m), 0)
+  )
+
   /** 按展开状态把树摊平成定高行，交给虚拟滚动 */
   const rows = computed<TreeRow[]>(() => {
     const out: TreeRow[] = []
@@ -80,6 +85,7 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     totalSize,
     totalDup,
     dirCount,
+    maxSize,
     rows,
     setTree,
     toggle,
