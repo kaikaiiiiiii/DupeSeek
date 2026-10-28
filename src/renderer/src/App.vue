@@ -68,7 +68,7 @@ onMounted(async () => {
 })
 
 // 目标列表变化（启动恢复 / 添加 / 删除）→ 自动增量同步；
-// 正在扫描时不重复触发（下次列表变化再纳入）
+// 正在扫描时记挂起标记，本轮完成后自动补一轮同步（见 scan store）
 watch(
   () => useTargetStore().targets,
   async () => {
