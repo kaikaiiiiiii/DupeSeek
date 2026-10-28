@@ -1,38 +1,47 @@
 <template>
   <div class="list-area">
-    <VirtualScrollList v-if="treesize.rows.length > 0" :items="treesize.rows" :item-size="28">
-      <template #default="{ item }">
-        <div
-          class="tree-row"
-          :class="{ branch: (item as TreeRow).node.children.length > 0 }"
-          :style="barStyle(item as TreeRow)"
-          @click="treesize.toggle((item as TreeRow).node.path)"
-        >
-          <span v-for="i in (item as TreeRow).depth" :key="i" class="indent-gap"></span>
-          <span class="disclosure">
-            {{
-              (item as TreeRow).node.children.length > 0
-                ? treesize.expanded.has((item as TreeRow).node.path)
-                  ? '▾'
-                  : '▸'
-                : ''
-            }}
-          </span>
-          <span class="dir-icon">📁</span>
-          <span class="dir-name" :title="(item as TreeRow).node.path">{{
-            (item as TreeRow).node.name
-          }}</span>
-          <span class="dir-size">{{ formatBytes((item as TreeRow).node.size) }}</span>
-          <span class="dir-dup" :class="{ dup: (item as TreeRow).node.dupWasted > 0 }">
-            {{
-              (item as TreeRow).node.dupWasted > 0
-                ? formatBytes((item as TreeRow).node.dupWasted)
-                : '—'
-            }}
-          </span>
-        </div>
-      </template>
-    </VirtualScrollList>
+    <template v-if="treesize.rows.length > 0">
+      <div class="tree-header">
+        <span class="dir-name">名称</span>
+        <span class="dir-size">大小</span>
+        <span class="dir-dup">重复占用</span>
+      </div>
+      <div class="tree-scroll">
+        <VirtualScrollList :items="treesize.rows" :item-size="28">
+          <template #default="{ item }">
+            <div
+              class="tree-row"
+              :class="{ branch: (item as TreeRow).node.children.length > 0 }"
+              :style="barStyle(item as TreeRow)"
+              @click="treesize.toggle((item as TreeRow).node.path)"
+            >
+              <span v-for="i in (item as TreeRow).depth" :key="i" class="indent-gap"></span>
+              <span class="disclosure">
+                {{
+                  (item as TreeRow).node.children.length > 0
+                    ? treesize.expanded.has((item as TreeRow).node.path)
+                      ? '▾'
+                      : '▸'
+                    : ''
+                }}
+              </span>
+              <span class="dir-icon">📁</span>
+              <span class="dir-name" :title="(item as TreeRow).node.path">{{
+                (item as TreeRow).node.name
+              }}</span>
+              <span class="dir-size">{{ formatBytes((item as TreeRow).node.size) }}</span>
+              <span class="dir-dup" :class="{ dup: (item as TreeRow).node.dupWasted > 0 }">
+                {{
+                  (item as TreeRow).node.dupWasted > 0
+                    ? formatBytes((item as TreeRow).node.dupWasted)
+                    : '—'
+                }}
+              </span>
+            </div>
+          </template>
+        </VirtualScrollList>
+      </div>
+    </template>
     <div v-else class="empty">
       {{
         scan.status === 'scanning'
@@ -66,6 +75,27 @@ function barStyle(row: TreeRow): Record<string, string> {
 
 <style scoped>
 .list-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 表头：与数据行共用列类名（.dir-name/.dir-size/.dir-dup），保证列对齐 */
+.tree-header {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--hover-bg);
+  color: var(--muted);
+  font-size: 12px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.tree-scroll {
   flex: 1;
   min-height: 0;
 }
