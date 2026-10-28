@@ -4,4 +4,4 @@ out
 .DS_Store
 .eslintcache
 *.log*
-!change.log
+!CHANGELOG.md
