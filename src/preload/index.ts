@@ -30,6 +30,10 @@ const api: DupeSeekApi = {
   setSettings: (patch) => ipcRenderer.invoke('app:set-settings', plainJson(patch)),
   capabilities: () => ipcRenderer.invoke('app:capabilities'),
   fileIcons: (paths) => ipcRenderer.invoke('app:file-icons', paths),
+  treeRoots: (sortKey, desc) => ipcRenderer.invoke('tree:roots', sortKey, desc),
+  treeChildren: (dir, sortKey, desc) => ipcRenderer.invoke('tree:children', dir, sortKey, desc),
+  treeFiles: (dir, sortKey, desc, offset, limit) =>
+    ipcRenderer.invoke('tree:files', dir, sortKey, desc, offset, limit),
 
   onScanProgress: subscribe('scan:progress'),
   onScanGroup: subscribe('scan:group'),
