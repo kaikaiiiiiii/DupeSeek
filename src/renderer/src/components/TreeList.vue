@@ -56,9 +56,10 @@ const scan = useScanStore()
 const ROW_PAD = 10
 const INDENT = 16
 
-/** TreeSize 风格体积条：左缘对齐所在层级缩进，宽度按当前最大体积等比例 */
+/** TreeSize 风格体积条：左缘对齐所在层级缩进，宽度按该层最大体积等比例 */
 function barStyle(row: TreeRow): Record<string, string> {
-  const pct = treesize.maxSize > 0 ? ((row.node.size / treesize.maxSize) * 100).toFixed(2) : '0.00'
+  const max = treesize.maxSizeByDepth.get(row.depth) ?? 0
+  const pct = max > 0 ? ((row.node.size / max) * 100).toFixed(2) : '0.00'
   return { '--bar-left': `${ROW_PAD + row.depth * INDENT}px`, '--bar-w': `${pct}%` }
 }
 </script>
