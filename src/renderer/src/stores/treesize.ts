@@ -10,6 +10,8 @@ import { useScanStore } from './scan'
 
 export interface TreeDirRow {
   kind: 'dir'
+  /** 位置标识：祖先链唯一确定一个 UI 条目（同一路径可在多处出现，展开互不联动） */
+  id: string
   data: TreeDirRowData
   depth: number
 }
@@ -26,7 +28,7 @@ export interface TreeFileRow {
 /** 目录直属文件聚合条目（[n 个文件]），可展开为逐文件条目 */
 export interface TreeAggRow {
   kind: 'aggregate'
-  path: string
+  id: string
   parent: string
   name: string
   size: number
@@ -45,14 +47,23 @@ export type TreeRow = TreeDirRow | TreeFileRow | TreeAggRow | TreeLoadingRow
 
 /** 根级缓存的约定键 */
 const ROOT = ''
+/** 位置标识的分隔符：文件名理论可含任何可见字符，用控制字符杜绝碰撞 */
+const SEP = '\u0000'
+/** 聚合行的展开指令前缀（expanded 值的约定） */
+const AGG_PREFIX = '::files:'
 
 /**
  * 空间分析视图的拉取式模型：树的权威数据在后端，前端只保存
  * 已展开路径的子级/文件缓存并拼装成虚拟滚动平面行。
  * 树版本（rev）随扫描 progress 事件推进，变化即失效缓存重取。
+ *
+ * 展开状态按「位置」而非「路径」记键：同一目录作为嵌套目标的根行、
+ * 又作为父目标树中的子行出现时，是两个独立 UI 条目，展开互不联动；
+ * 数据缓存仍按路径共享——同一份后端聚合服务两处展示。
  */
 export const useTreeSizeStore = defineStore('treesize', () => {
-  const expanded = ref<Set<string>>(new Set())
+  /** 位置标识 → 取数指令（目录路径，或 AGG_PREFIX + 父目录路径） */
+  const expanded = ref<Map<string, string>>(new Map())
   const sortKey = ref<TreeSortKey>('size')
   const sortDesc = ref(true)
   const rev = ref(0)
@@ -122,13 +133,13 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     filesCache.value = {}
   }
 
-  /** 重取根级与所有已展开路径 */
+  /** 重取根级与所有已展开条目的数据（按指令，与位置无关） */
   function refresh(): void {
     invalidate()
     void ensureChildren(ROOT)
-    for (const p of expanded.value) {
-      if (p.endsWith('::files')) void ensureFiles(p.slice(0, -'::files'.length))
-      else void ensureChildren(p)
+    for (const cmd of expanded.value.values()) {
+      if (cmd.startsWith(AGG_PREFIX)) void ensureFiles(cmd.slice(AGG_PREFIX.length))
+      else void ensureChildren(cmd)
     }
   }
 
@@ -139,43 +150,52 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     refresh()
   }
 
-  function toggle(path: string): void {
-    const next = new Set(expanded.value)
-    if (next.has(path)) next.delete(path)
-    else {
-      next.add(path)
-      if (path.endsWith('::files')) void ensureFiles(path.slice(0, -'::files'.length))
-      else void ensureChildren(path)
+  function toggleRow(item: TreeDirRow | TreeAggRow): void {
+    const next = new Map(expanded.value)
+    if (next.has(item.id)) next.delete(item.id)
+    else if (item.kind === 'aggregate') {
+      next.set(item.id, AGG_PREFIX + item.parent)
+      void ensureFiles(item.parent)
+    } else {
+      next.set(item.id, item.data.path)
+      void ensureChildren(item.data.path)
     }
     expanded.value = next
   }
 
   function reset(): void {
-    expanded.value = new Set()
+    expanded.value = new Map()
     refresh()
   }
 
   function collapseAll(): void {
-    expanded.value = new Set()
+    expanded.value = new Map()
   }
 
-  /** 全部展开：懒加载下只展开已加载缓存内的目录（数据随展开逐步取回） */
+  /** 全部展开：懒加载下只展开已加载缓存内的条目（数据随展开逐步取回） */
   function expandAll(): void {
-    const next = new Set(expanded.value)
-    for (const [dir, c] of Object.entries(childrenCache.value)) {
-      if (!c || c === 'loading') continue
+    const next = new Map(expanded.value)
+    const visit = (dir: string, prefix: string): void => {
+      const c = childrenCache.value[dir]
+      if (!c || c === 'loading') return
       for (const d of c.dirs) {
         if (d.childDirs > 0 || d.fileCount > 0) {
-          next.add(d.path)
+          const id = prefix ? prefix + SEP + d.path : d.path
+          next.set(id, d.path)
           void ensureChildren(d.path)
-          if (d.childDirs > 0 && d.fileCount > 0) next.add(d.path + '::files')
+          if (d.childDirs > 0 && d.fileCount > 0) {
+            next.set(id + SEP + d.path + '::files', AGG_PREFIX + d.path)
+          }
+          visit(d.path, id)
         }
       }
       if (c.agg && c.agg.count > 0) {
-        next.add(dir + '::files')
+        const aggId = (prefix ? prefix + SEP : '') + dir + '::files'
+        next.set(aggId, AGG_PREFIX + dir)
         if (dir !== ROOT) void ensureFiles(dir)
       }
     }
+    visit(ROOT, '')
     expanded.value = next
   }
 
@@ -192,19 +212,20 @@ export const useTreeSizeStore = defineStore('treesize', () => {
 
   // —— 摊平：把已缓存数据拼装成虚拟滚动平面行，缺失处以加载占位行补位 ——
 
-  /** 聚合行的排序：名称排序恒排末尾；大小/重复按值并入（目录序后端已排好，稳定排序插入聚合） */
+  /** 聚合行的排序：名称排序恒排末尾；大小/重复按值并入（目录序后端已排好，稳定排序插入） */
   function buildLevel(dir: string, depth: number): Array<TreeDirRow | TreeAggRow> {
     const c = childrenCache.value[dir]
     if (!c || c === 'loading') return []
     const items: Array<TreeDirRow | TreeAggRow> = c.dirs.map((d) => ({
       kind: 'dir' as const,
+      id: '',
       data: d,
       depth
     }))
     if (c.agg) {
       items.push({
         kind: 'aggregate',
-        path: dir + '::files',
+        id: '',
         parent: dir,
         name: `[${c.agg.count} 个文件]`,
         size: c.agg.size,
@@ -217,8 +238,8 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     if (sortKey.value === 'name') {
       const agg = items.filter((i): i is TreeAggRow => i.kind === 'aggregate')
       const dirs = items.filter((i): i is TreeDirRow => i.kind === 'dir')
-      dirs.sort(
-        (a, b) => dirFlag * a.data.name.localeCompare(b.data.name, undefined, { numeric: true })
+      dirs.sort((a, b) =>
+        dirFlag * a.data.name.localeCompare(b.data.name, undefined, { numeric: true })
       )
       return [...dirs, ...agg]
     }
@@ -252,7 +273,7 @@ export const useTreeSizeStore = defineStore('treesize', () => {
         })
       }
     }
-    const walkChildren = (dir: string, depth: number): void => {
+    const walkChildren = (dir: string, prefix: string, depth: number): void => {
       const cached = childrenCache.value[dir]
       if (cached === undefined || cached === 'loading') {
         out.push({ kind: 'loading', depth })
@@ -260,17 +281,20 @@ export const useTreeSizeStore = defineStore('treesize', () => {
       }
       const level = buildLevel(dir, depth)
       for (const it of level) {
-        out.push(it)
         if (it.kind === 'aggregate') {
-          if (expanded.value.has(it.path)) walkFiles(it.parent, depth + 1)
+          it.id = (prefix ? prefix + SEP : '') + it.parent + '::files'
+          out.push(it)
+          if (expanded.value.has(it.id)) walkFiles(it.parent, depth + 1)
           continue
         }
-        if (!expanded.value.has(it.data.path)) continue
-        if (it.data.childDirs > 0) walkChildren(it.data.path, depth + 1)
+        it.id = prefix ? prefix + SEP + it.data.path : it.data.path
+        out.push(it)
+        if (!expanded.value.has(it.id)) continue
+        if (it.data.childDirs > 0) walkChildren(it.data.path, it.id, depth + 1)
         if (it.data.childDirs === 0 && it.data.fileCount > 0) walkFiles(it.data.path, depth + 1)
       }
     }
-    walkChildren(ROOT, 0)
+    walkChildren(ROOT, '', 0)
     return out
   })
 
@@ -306,7 +330,7 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     rows,
     maxSize,
     maxDup,
-    toggle,
+    toggleRow,
     reset,
     expandAll,
     collapseAll

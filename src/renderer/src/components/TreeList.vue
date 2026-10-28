@@ -97,7 +97,7 @@ function view(item: TreeRow): RowView {
     const expandable = d.childDirs > 0 || d.fileCount > 0
     return {
       depth: item.depth,
-      arrow: expandable ? (treesize.expanded.has(d.path) ? '∨' : '>') : '',
+      arrow: expandable ? (treesize.expanded.has(item.id) ? '∨' : '>') : '',
       iconKind: 'dir',
       iconPath: d.path,
       sizeText: formatBytes(d.size),
@@ -111,7 +111,7 @@ function view(item: TreeRow): RowView {
   if (item.kind === 'aggregate') {
     return {
       depth: item.depth,
-      arrow: treesize.expanded.has(item.path) ? '∨' : '>',
+      arrow: treesize.expanded.has(item.id) ? '∨' : '>',
       iconKind: 'aggregate',
       iconPath: item.path,
       sizeText: formatBytes(item.size),
@@ -143,8 +143,8 @@ function indicator(key: 'name' | 'size' | 'dup'): string {
 }
 
 function onRowClick(item: TreeRow): void {
-  if (item.kind === 'dir' && view(item).expandable) treesize.toggle(item.data.path)
-  else if (item.kind === 'aggregate') treesize.toggle(item.path)
+  if (item.kind === 'dir' && view(item).expandable) treesize.toggleRow(item)
+  else if (item.kind === 'aggregate') treesize.toggleRow(item)
 }
 
 /** 体积条：左缘对齐所在层级缩进；100% 基准 = 全局最大体积（名称列内可用宽度，
