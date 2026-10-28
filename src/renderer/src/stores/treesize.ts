@@ -34,6 +34,15 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     return max
   })
 
+  /** 各层级的最大重复占用（按可见行统计），作为重复条的 100% 基准 */
+  const maxDupByDepth = computed(() => {
+    const max = new Map<number, number>()
+    for (const r of rows.value) {
+      if (r.node.dupWasted > (max.get(r.depth) ?? 0)) max.set(r.depth, r.node.dupWasted)
+    }
+    return max
+  })
+
   /** 按展开状态把树摊平成定高行，交给虚拟滚动 */
   const rows = computed<TreeRow[]>(() => {
     const out: TreeRow[] = []
@@ -90,6 +99,7 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     totalDup,
     dirCount,
     maxSizeByDepth,
+    maxDupByDepth,
     rows,
     setTree,
     toggle,
