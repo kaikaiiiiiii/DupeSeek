@@ -237,18 +237,18 @@ function barStyle(item: TreeRow): Record<string, string> {
   position: relative;
 }
 
-/* 体积条（黄）：左缘在图标之后（10 padding + 14 disclosure + 16 icon + 6 margin，
+/* 体积条（黄）：左缘在图标之后（10 padding + 14 disclosure + 20 icon + 8 margin，
  * 外侧各留 2px 空隙）；宽度按名称列内可用宽度等比例，
- * 64px = 48 左缘 + 2 右侧空隙 + 4 间隙 + 10 右 padding，列宽用变量与拖拽联动，
+ * 70px = 54 左缘 + 2 右侧空隙 + 4 间隙 + 10 右 padding，列宽用变量与拖拽联动，
  * 保证 100% 不跨出名称列 */
 .tree-row::before {
   content: '';
   position: absolute;
   top: 2px;
   bottom: 2px;
-  left: calc(48px + var(--bar-indent, 0px));
+  left: calc(54px + var(--bar-indent, 0px));
   width: calc(
-    (100% - 64px - var(--col-size, 100px) - var(--col-dup, 110px) - var(--bar-indent, 0px)) *
+    (100% - 70px - var(--col-size, 100px) - var(--col-dup, 110px) - var(--bar-indent, 0px)) *
       var(--bar-ratio, 0)
   );
   background: var(--size-bar);
@@ -299,7 +299,7 @@ function barStyle(item: TreeRow): Record<string, string> {
 
 /* 图标与行内体积之间的间距；.tree-icon 定义在 TreeIcon.vue */
 .tree-icon {
-  margin-right: 6px;
+  margin-right: 8px;
 }
 
 .inline-size {
