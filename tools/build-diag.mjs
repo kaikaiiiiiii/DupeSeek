@@ -20,7 +20,7 @@ await esbuild.build({
           namespace: 'node-worker'
         }))
         build.onLoad({ filter: /.*/, namespace: 'node-worker' }, (args) => ({
-          contents: `import { Worker } from 'node:worker_threads'; export default (options) => new Worker(new URL('./${args.path}', import.meta.url), options)`,
+          contents: `import { Worker } from 'node:worker_threads'; export default (options) => new Worker(new URL('./${args.path}.js', import.meta.url), options)`,
           loader: 'js'
         }))
       }
