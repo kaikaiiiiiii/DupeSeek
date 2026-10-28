@@ -15,7 +15,7 @@
         </span>
       </div>
       <div class="tree-scroll">
-        <VirtualScrollList :items="treesize.rows" :item-size="28">
+        <VirtualScrollList :items="treesize.rows" :item-size="34">
           <template #default="{ item }">
             <div
               class="tree-row"
@@ -226,7 +226,8 @@ function barStyle(item: TreeRow): Record<string, string> {
 }
 
 .tree-row {
-  height: 28px;
+  height: 34px;
+  font-size: 15px;
   display: flex;
   align-items: center;
   padding: 0 10px;
