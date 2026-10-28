@@ -140,11 +140,6 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     }
   }
 
-  function invalidate(): void {
-    childrenCache.value = {}
-    filesCache.value = {}
-  }
-
   /** 重取根级与所有已展开条目：stale-while-revalidate——重取期间旧数据
    *  保持显示，响应到达后原位覆盖（避免哈希期反复闪烁加载态） */
   function refresh(): void {
