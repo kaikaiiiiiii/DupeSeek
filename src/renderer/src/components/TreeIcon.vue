@@ -23,8 +23,8 @@ const placeholder = computed(() => (props.kind === 'dir' ? '📁' : '📄'))
 
 <style scoped>
 .tree-icon {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   image-rendering: auto;
 }
@@ -33,7 +33,7 @@ const placeholder = computed(() => (props.kind === 'dir' ? '📁' : '📄'))
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1;
 }
 </style>
