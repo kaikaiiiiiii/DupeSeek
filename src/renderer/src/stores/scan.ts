@@ -20,6 +20,8 @@ export const useScanStore = defineStore('scan', () => {
   const targetProgress = ref<Record<string, number>>({})
   /** 已同步到引擎的目标集合（增量 diff 的基准） */
   const syncedTargets = ref<string[]>([])
+  /** 扫描进行中发生的目标变化：本轮完成后自动补一轮增量同步 */
+  const pendingSync = ref(false)
   const error = ref('')
 
   function initDraft(saved: ScanSettings): void {
@@ -72,12 +74,23 @@ export const useScanStore = defineStore('scan', () => {
     status.value = 'error'
   })
 
+  /** 本轮扫描结束后消费挂起的目标变化（无变化则空操作） */
+  function maybePendingSync(): void {
+    if (!pendingSync.value) return
+    pendingSync.value = false
+    void syncTargets().catch(() => {})
+  }
+
   /**
    * 目标列表同步（增量）：新增目标增量扫描并与现有条目比桶；
    * 移除目标纯内存清理（无磁盘 I/O）。现有条目的哈希记忆化全部保留。
    */
   async function syncTargets(): Promise<void> {
-    if (status.value === 'scanning') return
+    if (status.value === 'scanning') {
+      // 不丢弃：记挂起标记，本轮扫描完成后自动补一轮增量同步
+      pendingSync.value = true
+      return
+    }
     const targets = useTargetStore().targets
     if (targets.length === 0) throw new Error('请先在左侧添加扫描目标')
 
@@ -112,9 +125,11 @@ export const useScanStore = defineStore('scan', () => {
       if (Array.isArray(summary.value?.tree)) {
         useTreeSizeStore().setTree(summary.value.tree)
       }
+      maybePendingSync()
     } catch (err) {
       status.value = 'error'
       error.value = err instanceof Error ? err.message : String(err)
+      maybePendingSync()
       throw err
     }
   }
@@ -149,9 +164,11 @@ export const useScanStore = defineStore('scan', () => {
       if (Array.isArray(summary.value?.tree)) {
         useTreeSizeStore().setTree(summary.value.tree)
       }
+      maybePendingSync()
     } catch (err) {
       status.value = 'error'
       error.value = err instanceof Error ? err.message : String(err)
+      maybePendingSync()
       throw err
     }
   }

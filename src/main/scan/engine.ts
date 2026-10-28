@@ -188,10 +188,9 @@ export class ScanEngine {
         this.processedPerTarget.delete(t)
       }
       this.purgeGroupsByTargets(removeList)
-      // 渐进树基线：先按（清理后的）既有条目重建一次并立刻推送，
-      // 让"移除目标"的体积变化即时可见
+      // 渐进树基线：重置节流，让枚举期第一个 progress 事件立即携带
+      // 当前的全量树（移除目标后的体积变化随之即时可见）
       this.lastTreeAt = 0
-      this.emitProgressiveTree(true)
 
       // 新增：枚举 → 触碰桶比较（只有 L0 同桶的新条目触发哈希）
       if (addList.length > 0) {
@@ -266,6 +265,9 @@ export class ScanEngine {
         onEntry: (e: FileEntry): void => {
           entries.push(e)
           this.found++
+          // 渐进体积树：fs walk 通道同样逐条登记，枚举期即可见
+          this.addEntryToDirs(e, target)
+          this.emitProgress(e.path)
           lastPath.value = e.path
         },
         onDir: (p: string): void => {
@@ -531,9 +533,11 @@ export class ScanEngine {
         fullmd5: null
       }
       entries.push(entry)
-      // 渐进体积树：登记祖先目录并累加体积（与 rebuildDirs 同语义的增量版）
+      // 渐进体积树：登记祖先目录并累加体积（与 rebuildDirs 同语义的增量版），
+      // 节流后的 progress 事件让树在枚举期实时生长
       this.addEntryToDirs(entry, target)
-      lastPath.value = f.filename
+      this.emitProgress(entry.path)
+      lastPath.value = entry.path
     }
     return true
   }
