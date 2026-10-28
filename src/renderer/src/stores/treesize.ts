@@ -2,10 +2,31 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { ScanTreeNode } from '../../../shared/types'
 
-export interface TreeRow {
+export interface TreeDirRow {
+  kind: 'dir'
   node: ScanTreeNode
   depth: number
 }
+
+export interface TreeFileRow {
+  kind: 'file'
+  path: string
+  name: string
+  size: number
+  depth: number
+}
+
+/** 目录含子目录又有直属文件时的虚拟聚合条目（[n 个文件]） */
+export interface TreeAggRow {
+  kind: 'aggregate'
+  path: string
+  name: string
+  size: number
+  count: number
+  depth: number
+}
+
+export type TreeRow = TreeDirRow | TreeFileRow | TreeAggRow
 
 export const useTreeSizeStore = defineStore('treesize', () => {
   const tree = ref<ScanTreeNode[]>([])
@@ -27,20 +48,40 @@ export const useTreeSizeStore = defineStore('treesize', () => {
 
   /** 可见行中的全局最大体积，作为体积条的 100% 基准——
    *  所有目录按同一尺度缩放，子目录条长之和自然等于父目录条长 */
-  const maxSize = computed(() => rows.value.reduce((m, r) => (r.node.size > m ? r.node.size : m), 0))
+  const maxSize = computed(() =>
+    rows.value.reduce((m, r) => Math.max(m, r.kind === 'dir' ? r.node.size : r.size), 0)
+  )
 
   /** 可见行中的全局最大重复占用，作为重复条的 100% 基准 */
   const maxDup = computed(() =>
-    rows.value.reduce((m, r) => (r.node.dupWasted > m ? r.node.dupWasted : m), 0)
+    rows.value.reduce((m, r) => Math.max(m, r.kind === 'dir' ? r.node.dupWasted : 0), 0)
   )
 
-  /** 按展开状态把树摊平成定高行，交给虚拟滚动 */
+  /** 按展开状态把树摊平成定高行，交给虚拟滚动。
+   *  文件展示规则：展开无子目录的目录逐个列出文件；既有子目录又有文件的，
+   *  文件合并为 `[n 个文件]` 虚拟条目与子目录并列 */
   const rows = computed<TreeRow[]>(() => {
     const out: TreeRow[] = []
     const flatten = (nodes: ScanTreeNode[], depth: number): void => {
       for (const n of nodes) {
-        out.push({ node: n, depth })
-        if (n.children.length > 0 && expanded.value.has(n.path)) flatten(n.children, depth + 1)
+        out.push({ kind: 'dir', node: n, depth })
+        if (!expanded.value.has(n.path)) continue
+        flatten(n.children, depth + 1)
+        if (n.children.length === 0) {
+          for (const f of n.files) {
+            out.push({ kind: 'file', path: f.path, name: f.name, size: f.size, depth: depth + 1 })
+          }
+        } else if (n.files.length > 0) {
+          const size = n.files.reduce((s, f) => s + f.size, 0)
+          out.push({
+            kind: 'aggregate',
+            path: n.path + '::files',
+            name: `[${n.files.length} 个文件]`,
+            size,
+            count: n.files.length,
+            depth: depth + 1
+          })
+        }
       }
     }
     flatten(tree.value, 0)

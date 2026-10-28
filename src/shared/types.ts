@@ -80,6 +80,13 @@ export interface ScanSummary {
   tree: ScanTreeNode[]
 }
 
+/** 体积树中挂在目录节点下的真实文件（压缩包内条目不挂，走合成目录） */
+export interface TreeNodeFile {
+  path: string
+  name: string
+  size: number
+}
+
 export interface ScanTreeNode {
   name: string
   path: string
@@ -88,6 +95,8 @@ export interface ScanTreeNode {
   /** 该目录（含子孙）中重复副本占用的字节数（按"每组保留最早修改"口径归集） */
   dupWasted: number
   children: ScanTreeNode[]
+  /** 直接位于该目录下的文件（不含子孙目录内的） */
+  files: TreeNodeFile[]
 }
 
 export interface DupeGroup {
@@ -143,6 +152,8 @@ export interface DupeSeekApi {
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   /** 本机能力检测（RAR 读取/压缩工具就位情况） */
   capabilities(): Promise<AppCapabilities>
+  /** 批量取文件/目录的系统图标（dataURL，主进程带缓存） */
+  fileIcons(paths: string[]): Promise<Record<string, string>>
 
   onScanProgress(cb: (p: ScanProgress) => void): () => void
   onScanGroup(cb: (p: { sessionId: string; groups: DupeGroup[] }) => void): () => void

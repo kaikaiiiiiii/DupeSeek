@@ -9,7 +9,8 @@ import type {
   ScanProgress,
   ScanSettings,
   ScanSummary,
-  ScanTreeNode
+  ScanTreeNode,
+  TreeNodeFile
 } from '../../shared/types'
 import { isPermissionError } from '../../shared/errors'
 import { createEverythingLister, type EverythingLister } from './everything'
@@ -748,7 +749,14 @@ export class ScanEngine {
   private buildTreeFrom(dirs: Map<string, DirAgg>): ScanTreeNode[] {
     const nodes = new Map<string, ScanTreeNode>()
     for (const [p, rec] of dirs) {
-      nodes.set(p, { name: rec.name, path: p, size: rec.size, dupWasted: rec.dup, children: [] })
+      nodes.set(p, {
+        name: rec.name,
+        path: p,
+        size: rec.size,
+        dupWasted: rec.dup,
+        children: [],
+        files: []
+      })
     }
     const roots: ScanTreeNode[] = []
     for (const [p, rec] of dirs) {
@@ -757,6 +765,21 @@ export class ScanEngine {
       const parent = nodes.get(rec.parent)
       if (parent) parent.children.push(node)
       else roots.push(node)
+    }
+    // 真实文件挂到父目录节点（压缩包内条目不挂，其体积已走合成目录链）
+    const fileGroups = new Map<string, TreeNodeFile[]>()
+    for (const list of this.targetEntries.values()) {
+      for (const e of list) {
+        if (e.containerPath !== null) continue
+        const parent = path.dirname(e.path)
+        const arr = fileGroups.get(parent)
+        if (arr) arr.push({ path: e.path, name: e.name, size: e.size })
+        else fileGroups.set(parent, [{ path: e.path, name: e.name, size: e.size }])
+      }
+    }
+    for (const [p, arr] of fileGroups) {
+      const node = nodes.get(p)
+      if (node) node.files = arr.sort((a, b) => b.size - a.size)
     }
     const bySize = (a: ScanTreeNode, b: ScanTreeNode): number => b.size - a.size
     for (const node of nodes.values()) node.children.sort(bySize)

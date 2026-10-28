@@ -3,7 +3,6 @@
     <template v-if="treesize.rows.length > 0">
       <div class="tree-header">
         <span class="dir-name">名称</span>
-        <span class="dir-size">大小</span>
         <span class="dir-dup">重复占用</span>
       </div>
       <div class="tree-scroll">
@@ -11,32 +10,23 @@
           <template #default="{ item }">
             <div
               class="tree-row"
-              :class="{ branch: (item as TreeRow).node.children.length > 0 }"
+              :class="{ branch: view(item as TreeRow).expandable }"
               :style="barStyle(item as TreeRow)"
-              @click="treesize.toggle((item as TreeRow).node.path)"
+              @click="onRowClick(item as TreeRow)"
             >
-              <span v-for="i in (item as TreeRow).depth" :key="i" class="indent-gap"></span>
-              <span class="disclosure">
-                {{
-                  (item as TreeRow).node.children.length > 0
-                    ? treesize.expanded.has((item as TreeRow).node.path)
-                      ? '▾'
-                      : '▸'
-                    : ''
-                }}
-              </span>
-              <span class="dir-icon">📁</span>
-              <span class="dir-name" :title="(item as TreeRow).node.path">{{
-                (item as TreeRow).node.name
+              <span v-for="i in view(item as TreeRow).depth" :key="i" class="indent-gap"></span>
+              <span class="disclosure">{{ view(item as TreeRow).arrow }}</span>
+              <TreeIcon
+                :path="view(item as TreeRow).iconPath"
+                :kind="view(item as TreeRow).iconKind"
+              />
+              <span class="inline-size">{{ view(item as TreeRow).sizeText }}</span>
+              <span class="dir-name" :title="view(item as TreeRow).fullPath">{{
+                view(item as TreeRow).name
               }}</span>
-              <span class="dir-size">{{ formatBytes((item as TreeRow).node.size) }}</span>
-              <span class="dir-dup" :class="{ dup: (item as TreeRow).node.dupWasted > 0 }">
-                {{
-                  (item as TreeRow).node.dupWasted > 0
-                    ? formatBytes((item as TreeRow).node.dupWasted)
-                    : '—'
-                }}
-              </span>
+              <span class="dir-dup" :class="{ dup: view(item as TreeRow).dupOn }">{{
+                view(item as TreeRow).dupText
+              }}</span>
             </div>
           </template>
         </VirtualScrollList>
@@ -57,22 +47,72 @@ import { useScanStore } from '../stores/scan'
 import { useTreeSizeStore, type TreeRow } from '../stores/treesize'
 import { formatBytes } from '../utils/format'
 import VirtualScrollList from './VirtualScrollList.vue'
+import TreeIcon from './TreeIcon.vue'
 
 const treesize = useTreeSizeStore()
 const scan = useScanStore()
 
-/** 与 .tree-row 的 padding 及 .indent-gap 宽度保持一致 */
+/** 与 .indent-gap 宽度保持一致 */
 const INDENT = 16
+
+interface RowView {
+  depth: number
+  /** '>' 收起 / '∨' 展开 / '' 不可展开 */
+  arrow: string
+  iconKind: 'dir' | 'file' | 'aggregate'
+  iconPath: string
+  sizeText: string
+  name: string
+  fullPath: string
+  dupText: string
+  dupOn: boolean
+  expandable: boolean
+}
+
+function view(item: TreeRow): RowView {
+  if (item.kind === 'dir') {
+    const n = item.node
+    const expandable = n.children.length > 0 || n.files.length > 0
+    return {
+      depth: item.depth,
+      arrow: expandable ? (treesize.expanded.has(n.path) ? '∨' : '>') : '',
+      iconKind: 'dir',
+      iconPath: n.path,
+      sizeText: formatBytes(n.size),
+      name: n.name,
+      fullPath: n.path,
+      dupText: n.dupWasted > 0 ? formatBytes(n.dupWasted) : '—',
+      dupOn: n.dupWasted > 0,
+      expandable
+    }
+  }
+  return {
+    depth: item.depth,
+    arrow: '',
+    iconKind: item.kind,
+    iconPath: item.path,
+    sizeText: formatBytes(item.size),
+    name: item.name,
+    fullPath: item.path,
+    dupText: '—',
+    dupOn: false,
+    expandable: false
+  }
+}
+
+function onRowClick(item: TreeRow): void {
+  if (item.kind === 'dir' && view(item).expandable) treesize.toggle(item.node.path)
+}
 
 /** 体积条：左缘对齐所在层级缩进；100% 基准 = 全局最大体积（名称列内可用宽度，
  *  不跨列）。重复条：洋红，限于重复占用列（固定 110px），按全局最大重复等比例 */
-function barStyle(row: TreeRow): Record<string, string> {
+function barStyle(item: TreeRow): Record<string, string> {
+  const size = item.kind === 'dir' ? item.node.size : item.size
+  const dup = item.kind === 'dir' ? item.node.dupWasted : 0
   return {
-    '--bar-indent': `${row.depth * INDENT}px`,
-    '--bar-ratio':
-      treesize.maxSize > 0 ? (row.node.size / treesize.maxSize).toFixed(4) : '0',
-    '--dup-ratio':
-      treesize.maxDup > 0 ? (row.node.dupWasted / treesize.maxDup).toFixed(4) : '0'
+    '--bar-indent': `${item.depth * INDENT}px`,
+    '--bar-ratio': treesize.maxSize > 0 ? (size / treesize.maxSize).toFixed(4) : '0',
+    '--dup-ratio': treesize.maxDup > 0 && dup > 0 ? (dup / treesize.maxDup).toFixed(4) : '0'
   }
 }
 </script>
@@ -85,7 +125,7 @@ function barStyle(row: TreeRow): Record<string, string> {
   flex-direction: column;
 }
 
-/* 表头：与数据行共用列类名（.dir-name/.dir-size/.dir-dup），保证列对齐 */
+/* 表头：与数据行共用列类名（.dir-name/.dir-dup），保证列对齐 */
 .tree-header {
   height: 30px;
   display: flex;
@@ -115,14 +155,16 @@ function barStyle(row: TreeRow): Record<string, string> {
   position: relative;
 }
 
-/* 体积条（黄）：左缘对齐所在层级缩进；宽度按名称列内可用宽度等比例，
- * 230px = 左右 padding 20 + 大小列 100 + 重复占用列 110，保证 100% 不跨出名称列 */.tree-row::before {
+/* 体积条（黄）：左缘在图标之后（10 padding + 14 disclosure + 16 icon + 6 margin）；
+ * 宽度按名称列内可用宽度等比例，170px = 46 + 4 间隙 + 重复占用列 110 + 右 padding 10，
+ * 保证 100% 不跨出名称列 */
+.tree-row::before {
   content: '';
   position: absolute;
   top: 2px;
   bottom: 2px;
-  left: calc(10px + var(--bar-indent, 0px));
-  width: calc((100% - 230px - var(--bar-indent, 0px)) * var(--bar-ratio, 0));
+  left: calc(46px + var(--bar-indent, 0px));
+  width: calc((100% - 170px - var(--bar-indent, 0px)) * var(--bar-ratio, 0));
   background: var(--size-bar);
   border-radius: 2px;
   z-index: 0;
@@ -169,9 +211,17 @@ function barStyle(row: TreeRow): Record<string, string> {
   color: var(--muted);
 }
 
-.dir-icon {
-  flex-shrink: 0;
+/* 图标与行内体积之间的间距；.tree-icon 定义在 TreeIcon.vue */
+.tree-icon {
   margin-right: 6px;
+}
+
+.inline-size {
+  width: 64px;
+  flex-shrink: 0;
+  text-align: right;
+  margin-right: 8px;
+  color: var(--muted);
 }
 
 .dir-name {
@@ -182,18 +232,16 @@ function barStyle(row: TreeRow): Record<string, string> {
   text-overflow: ellipsis;
 }
 
-.dir-size {
-  width: 100px;
-  flex-shrink: 0;
-  text-align: right;
-  color: var(--muted);
-}
-
 .dir-dup {
   width: 110px;
   flex-shrink: 0;
   text-align: right;
   color: var(--muted);
+}
+
+.dup {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 .empty {

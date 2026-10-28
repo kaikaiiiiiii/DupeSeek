@@ -1,5 +1,5 @@
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024) return `${bytes.toFixed(1)} B`
   const units = ['KB', 'MB', 'GB', 'TB']
   let value = bytes
   let unit = 'B'
@@ -8,7 +8,7 @@ export function formatBytes(bytes: number): string {
     value /= 1024
     unit = u
   }
-  return `${value.toFixed(value >= 100 ? 0 : 1)} ${unit}`
+  return `${value.toFixed(1)} ${unit}`
 }
 
 /** 时长格式化：<1小时 为 m:ss，否则 h:mm:ss */
