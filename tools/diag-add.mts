@@ -32,6 +32,49 @@ for (let i = 0; i < 12; i++) {
   )
 }
 await p2
-const roots = engine.treeRoots('size', true)
-console.log('[final] roots =', roots.dirs.length, 'rev =', roots.rev)
+const roots2 = engine.treeRoots('size', true)
+console.log('[final] roots =', roots2.dirs.length, 'rev =', roots2.rev)
+
+// phase 3: 移除——调度应即时返回，清理异步收敛
+const bigRow = roots2.dirs.find((r) => r.path === big)
+if (bigRow) {
+  const t0 = Date.now()
+  // @ts-expect-error 诊断直通私有方法
+  engine.scheduleRemoval(big)
+  const immediate = engine.treeRoots('size', true)
+  console.log(
+    '[remove big] 调度耗时',
+    Date.now() - t0,
+    'ms; roots 立即 =',
+    immediate.dirs.length,
+    '(应不含大目标)'
+  )
+  for (let i = 0; i < 8; i++) {
+    await sleep(300)
+    const r = engine.treeRoots('size', true)
+    console.log(`[cleanup #${i}] rev=${r.rev} roots=${r.dirs.length} dirs=${r.stats.dirCount}`)
+  }
+  // @ts-expect-error 诊断直通
+  const rec = engine.dirs.get(big)
+  // @ts-expect-error 诊断直通
+  const kid = engine.dirs.get(big + '\\dist')
+  console.log(
+    '[internal] big rec =',
+    JSON.stringify(rec),
+    '| dist rec =',
+    JSON.stringify(kid),
+    '| dirs =',
+    engine.dirs.size
+  )
+}
+
+// phase 4: 单文件目标移除
+const fileTarget = 'D:\\Coding\\DupeSeek\\package.json'
+await engine.syncTargets({ ...settings2, targets: [docs, fileTarget] })
+console.log('[phase4] file target added, entries =', engine.entries.size)
+// @ts-expect-error 诊断直通私有方法
+engine.scheduleRemoval(fileTarget)
+await sleep(1000)
+const r4 = engine.treeRoots('size', true)
+console.log('[phase4] after removal roots =', r4.dirs.length, 'stats =', JSON.stringify(r4.stats))
 process.exit(0)

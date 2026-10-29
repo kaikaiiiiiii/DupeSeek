@@ -211,8 +211,10 @@ export class ScanEngine {
     const startedAt = Date.now()
 
     try {
-      // 移除：纯内存清理（条目重归属/删除、组剔除、进度），零磁盘 I/O
-      for (const t of removeList) this.removeTarget(t)
+      // 移除是指令：立即应答（根集合摘除 + 版本广播），重活入队后台分批回收
+      for (const t of removeList) this.scheduleRemoval(t)
+      // 清理与后续扫描串行化（清理分批让出，等待短暂）
+      while (this.cleaningUp) await new Promise<void>((resolve) => setImmediate(resolve))
 
       // 新增：枚举 → 触碰桶比较（只有 L0 同桶的新条目触发哈希）
       if (addList.length > 0) {
@@ -237,7 +239,8 @@ export class ScanEngine {
 
       // 汇总：体积树按当前全量条目重算，组数为会话累计值
       this.phase = 'finalizing'
-      this.rebuildDirs()
+      // 纯移除的同步不走全量重建——移除清理已增量反扣并精确剪枝
+      if (addList.length > 0) this.rebuildDirs()
       let wastedBytes = 0
       for (const g of this.knownGroups.values()) {
         wastedBytes += g.size * (g.entries.length - 1)
@@ -266,6 +269,9 @@ export class ScanEngine {
   /** 整体重扫：清空会话状态后按当前目标全量扫描 */
   async rescanAll(settings: ScanSettings): Promise<ScanSummary> {
     if (this.running) throw new Error('已有扫描任务在进行中')
+    // 等待在途移除清理收尾（分批让出，短暂），避免与新全量数据互踩
+    while (this.cleaningUp) await new Promise<void>((r) => setImmediate(r))
+    this.removalTasks = []
     this.entries.clear()
     this.owners.clear()
     this.coveredTargets.clear()
@@ -296,29 +302,162 @@ export class ScanEngine {
     return true
   }
 
-  /** 移除目标：其条目若仍被剩余目标覆盖则改归属，否则删除并从组中剔除 */
-  private removeTarget(target: string): void {
+  // —— 目标移除的异步清理：立即应答，后台分批回收（定期让出事件循环）——
+  private removalTasks: string[] = []
+  private cleaningUp = false
+
+  private broadcastRev(): void {
+    this.broadcaster('scan:rev', { rev: this.treeRev })
+  }
+
+  /** 立即生效：根集合摘除（根行即从查询结果消失），重活入队后台执行 */
+  private scheduleRemoval(target: string): void {
     this.coveredTargets.delete(target)
-    const remaining = [...this.coveredTargets]
-    const deleted = new Set<string>()
-    for (const [key, owner] of this.owners) {
-      if (owner !== target) continue
-      const cover = remaining.find((t) => {
-        const lt = this.stopOf(t)
-        return key === lt || key.startsWith(lt + '\\')
-      })
-      if (cover) this.owners.set(key, cover)
-      else {
-        this.entries.delete(key)
-        this.owners.delete(key)
-        deleted.add(key)
-      }
-    }
     this.foundPerTarget.delete(target)
     this.processedPerTarget.delete(target)
+    this.removalTasks.push(target)
+    this.treeRev++
+    this.broadcastRev()
+    if (!this.cleaningUp) void this.runRemovalCleanup()
+  }
+
+  private async runRemovalCleanup(): Promise<void> {
+    this.cleaningUp = true
+    try {
+      while (this.removalTasks.length > 0) {
+        const target = this.removalTasks.shift() as string
+        await this.cleanupRemoval(target)
+      }
+    } finally {
+      this.cleaningUp = false
+    }
+    this.broadcastRev()
+  }
+
+  /** 单个目标的后台清理：重归属（含体量补记）/删除（含体量反扣、文件行
+   *  移除、空链剪枝）/组剔除，全部分批让出 */
+  private async cleanupRemoval(target: string): Promise<void> {
+    if (this.coveredTargets.has(target)) return // 移除后重新添加：现状即正确
+    const remaining = [...this.coveredTargets]
+    const wasted = this.wastedMap()
+    const deleted = new Set<string>()
+    const pruneSeeds = new Set<string>([target])
+    let n = 0
+    for (const [key, owner] of this.owners) {
+      if (owner !== target) continue
+      const e = this.entries.get(key)
+      // 选最深覆盖者（路径最长者最具体）
+      let best: string | null = null
+      for (const t of remaining) {
+        const lt = this.stopOf(t)
+        if (
+          (key === lt || key.startsWith(lt + '\\')) &&
+          (best === null || lt.length > this.stopOf(best).length)
+        ) {
+          best = t
+        }
+      }
+      if (best && e) {
+        this.owners.set(key, best)
+        this.extendBytes(e, target, best, wasted.get(e.path) ?? 0)
+      } else {
+        if (e) pruneSeeds.add(path.dirname(e.path))
+        if (e) {
+          this.subtractEntry(e, target, wasted.get(e.path) ?? 0)
+          this.entries.delete(key)
+          deleted.add(key)
+          const parent = path.dirname(e.path)
+          const arr = this.dirFiles.get(parent)
+          if (arr) {
+            const idx = arr.findIndex((f) => f.path === e.path)
+            if (idx >= 0) arr.splice(idx, 1)
+            if (arr.length === 0) this.dirFiles.delete(parent)
+          }
+        }
+        this.owners.delete(key)
+      }
+      if (++n % 100000 === 0) await new Promise<void>((r) => setImmediate(r))
+    }
     this.purgeGroupsByPaths(deleted)
-    // 目录聚合/子级索引按存活条目全量重建（增量反扣代价高，一次性重算更稳）
-    this.rebuildDirs()
+    this.pruneEmptyChains(pruneSeeds)
+    this.treeRev++
+  }
+
+  /** 重归属的体量补记：注册时字节只累加到旧归属根，归属改浅后需把
+   *  旧归属根之上的祖先链补齐（新归属更深时无需补——链上本就计过）。
+   *  dup 同理（dupBytes 为该条目作为非保留副本的分摊） */
+  private extendBytes(
+    e: FileEntry,
+    oldOwner: string,
+    newOwner: string,
+    dupBytes: number
+  ): void {
+    const stopNew = this.stopOf(newOwner)
+    const stopOld = this.stopOf(oldOwner)
+    if (stopNew === stopOld || stopNew.startsWith(stopOld + '\\')) return
+    let p = oldOwner
+    for (;;) {
+      const rec = this.dirs.get(p)
+      if (!rec) break
+      rec.size += e.size
+      rec.dup += dupBytes
+      const lp = this.keyOf(p)
+      if (lp === stopNew) break
+      const parent = path.dirname(p)
+      if (parent === p) break
+      p = parent
+    }
+  }
+
+  /** 删除条目的体量反扣（沿注册时的归属链）并移除文件行；dup 一并反扣 */
+  private subtractEntry(e: FileEntry, oldOwner: string, dupBytes: number): void {
+    const stop = this.stopOf(oldOwner)
+    let p = path.dirname(e.path)
+    for (;;) {
+      const rec = this.dirs.get(p)
+      if (!rec) break
+      rec.size -= e.size
+      if (rec.size < 0) rec.size = 0
+      rec.dup -= dupBytes
+      if (rec.dup < 0) rec.dup = 0
+      const lp = this.keyOf(p)
+      if (lp === stop) break
+      const parent = path.dirname(p)
+      if (parent === p) break
+      p = parent
+    }
+  }
+
+  /** 剪枝：删除条目所在链上已彻底为空（零体积、无子、无文件、非目标根）的目录 */
+  private pruneEmptyChains(seeds: Set<string>): void {
+    for (let p of seeds) {
+      for (;;) {
+        const rec = this.dirs.get(p)
+        if (!rec) break
+        const kids = this.childDirs.get(p)
+        const files = this.dirFiles.get(p)
+        if (
+          rec.size > 0 ||
+          rec.dup > 0 ||
+          (kids !== undefined && kids.length > 0) ||
+          (files !== undefined && files.length > 0) ||
+          this.coveredTargets.has(p)
+        ) {
+          break
+        }
+        const parent = rec.parent
+        this.dirs.delete(p)
+        const arr = this.childDirs.get(parent)
+        if (arr) {
+          const idx = arr.indexOf(p)
+          if (idx >= 0) arr.splice(idx, 1)
+          if (arr.length === 0) this.childDirs.delete(parent)
+        }
+        this.dirFiles.delete(p)
+        if (parent === p) break
+        p = parent
+      }
+    }
   }
 
   /** 从组中剔除已删除的路径，不足 2 个成员的组解散 */

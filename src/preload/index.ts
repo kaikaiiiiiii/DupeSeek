@@ -36,6 +36,7 @@ const api: DupeSeekApi = {
     ipcRenderer.invoke('tree:files', dir, sortKey, desc, offset, limit),
 
   onScanProgress: subscribe('scan:progress'),
+  onTreeRev: subscribe('scan:rev'),
   onScanGroup: subscribe('scan:group'),
   onScanDone: subscribe('scan:done'),
   onScanError: subscribe('scan:error')
