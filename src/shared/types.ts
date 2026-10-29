@@ -32,8 +32,10 @@ export interface ScanSettings {
   excludeHidden: boolean
   excludeSystem: boolean
   excludeJunction: boolean
-  /** 跳过 node_modules 目录（整棵子树，依赖目录通常无查重价值且体量巨大） */
-  excludeNodeModules: boolean
+  /** 排除的目录名（逗号分隔；任意层级同名目录按空目录呈现），默认 node_modules */
+  excludeDirNames: string
+  /** 排除的目录路径（逗号分隔的绝对路径；该目录整棵子树按空目录呈现） */
+  excludeDirPaths: string
   /** 字节阈值，含边界；null 表示不限制 */
   minSize: number | null
   maxSize: number | null

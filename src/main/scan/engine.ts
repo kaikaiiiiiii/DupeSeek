@@ -20,7 +20,15 @@ import { isPermissionError } from '../../shared/errors'
 import { createEverythingLister, type EverythingLister } from './everything'
 import { getHashPool, HASH_WORKERS } from './hashPool'
 import type { ArchiveEntryMeta } from './archives'
-import { extAllowed, extOf, settingsExcludesDir, walkTargets } from './walk'
+import {
+  buildDirExclusions,
+  extAllowed,
+  extOf,
+  isPathExcludedDir,
+  SYSTEM_DIRS,
+  walkTargets,
+  type DirExclusions
+} from './walk'
 
 const HEAD_BYTES = 1024 * 1024
 const GROUP_FLUSH_COUNT = 50
@@ -151,6 +159,10 @@ export class ScanEngine {
   /** 文件级重复占用缓存（随 knownGroups 变化按版本失效） */
   private wastedCache: { rev: number; map: Map<string, number> } | null = null
   private statsCache: { rev: number; stats: TreeStats } | null = null
+  /** 当前会话的目录排除集（由设置构建，syncTargets 时刷新） */
+  private excl: DirExclusions = { names: new Set(), pathStops: [] }
+  /** 排除目录的空节点（原始路径 → 发现它的目标），rebuildDirs 时重登记 */
+  private excludedDirs = new Map<string, string>()
 
   // —— 持久会话状态 ——
   private entries = new Map<string, FileEntry>()
@@ -191,6 +203,7 @@ export class ScanEngine {
     // 目标规范化在后端统一做：尾斜杠/裸盘符变体不产生第二份会话
     const canon: ScanSettings = { ...settings, targets: settings.targets.map(canonicalTarget) }
     if (canon.targets.length === 0) throw new Error('请先添加扫描目标')
+    this.excl = buildDirExclusions(canon)
 
     const requested = new Set(canon.targets)
     const addList = canon.targets.filter((t) => !this.coveredTargets.has(t))
@@ -275,6 +288,7 @@ export class ScanEngine {
     this.entries.clear()
     this.owners.clear()
     this.coveredTargets.clear()
+    this.excludedDirs.clear()
     this.knownGroups.clear()
     this.foundPerTarget.clear()
     this.processedPerTarget.clear()
@@ -300,6 +314,22 @@ export class ScanEngine {
     this.owners.set(key, target)
     this.addEntryToDirs(e, target)
     return true
+  }
+
+  /** 排除目录登记为空节点：沿祖先链补登记（无字节），并记录归属供重建/清理 */
+  private registerExcludedDir(dir: string, target: string): void {
+    if (this.excludedDirs.has(dir)) return
+    this.excludedDirs.set(dir, target)
+    const stop = this.stopOf(target)
+    let p = dir
+    for (;;) {
+      const lp = this.keyOf(p)
+      if (lp === stop || !lp.startsWith(stop + '\\')) break
+      if (this.dirs.has(p)) break // 已登记，其祖先必已登记
+      this.recordDir(p)
+      this.treeRev++
+      p = path.dirname(p)
+    }
   }
 
   // —— 目标移除的异步清理：立即应答，后台分批回收（定期让出事件循环）——
@@ -379,6 +409,11 @@ export class ScanEngine {
       if (++n % 100000 === 0) await new Promise<void>((r) => setImmediate(r))
     }
     this.purgeGroupsByPaths(deleted)
+    for (const [dir, owner] of [...this.excludedDirs]) {
+      if (owner !== target) continue
+      this.excludedDirs.delete(dir)
+      pruneSeeds.add(dir)
+    }
     this.pruneEmptyChains(pruneSeeds)
     this.treeRev++
   }
@@ -487,6 +522,10 @@ export class ScanEngine {
       }
       const ctx = {
         settings,
+        excl: this.excl,
+        onExcludedDir: (p: string): void => {
+          this.registerExcludedDir(p, target)
+        },
         canceled: (): boolean => this.canceled,
         onEntry: (e: FileEntry): void => {
           if (!register(e)) return
@@ -502,6 +541,11 @@ export class ScanEngine {
         }
       }
 
+      // 目标根本身被排除：整棵子树视为不存在（根行已登记，空目录呈现）
+      if (this.excl.names.has(path.basename(target)) || isPathExcludedDir(target, this.excl)) {
+        this.foundPerTarget.set(target, 0)
+        continue
+      }
       let handled = false
       if (lister) {
         try {
@@ -727,8 +771,24 @@ export class ScanEngine {
     // node_modules：Everything 返回全量数据，直接按目录名收集前缀后从数组剔除
     const excluded: string[] = []
     const dirOk: string[] = []
+    // 设置中的路径排除：其子树文件/目录一律按前缀过滤
+    for (const e of this.excl.pathStops) excluded.push(e)
+    const nameHits: string[] = []
+    const pathHits: string[] = []
     for (const dir of res.dirs) {
-      if (settingsExcludesDir(path.basename(dir), settings)) {
+      const name = path.basename(dir)
+      if (settings.excludeHidden && name.startsWith('.')) {
+        excluded.push(dir)
+        continue
+      }
+      if (settings.excludeSystem && SYSTEM_DIRS.has(name)) {
+        excluded.push(dir)
+        continue
+      }
+      if (this.excl.names.has(name) || isPathExcludedDir(dir, this.excl)) {
+        // 排除命中：先收集，后取最顶层登记（es 返回顺序不定）
+        if (this.excl.names.has(name)) nameHits.push(dir)
+        else pathHits.push(dir)
         excluded.push(dir)
         continue
       }
@@ -738,6 +798,24 @@ export class ScanEngine {
       }
       dirOk.push(dir)
     }
+    // 路径命中里只登记最顶层（es 返回顺序不定，收集后统一计算）；
+    // 名称命中若位于某路径排除之内则由该路径节点代表，不重复登记
+    const inside = (p: string, ancestor: string): boolean => {
+      const norm = (x: string): string =>
+        (process.platform === 'win32' ? x.toLowerCase() : x).replace(/[\\/]+$/, '')
+      const np = norm(p)
+      const na = norm(ancestor)
+      return np === na || np.startsWith(na + '\\')
+    }
+    const pathTops = pathHits.filter((d) => !pathHits.some((o) => o !== d && inside(d, o)))
+    for (const d of pathTops) this.registerExcludedDir(d, target)
+    // 名称命中：位于其它名称命中或路径排除之内时由其顶代表
+    const nameTops = nameHits.filter(
+      (d) =>
+        !nameHits.some((o) => o !== d && inside(d, o)) &&
+        !pathTops.some((t) => inside(d, t))
+    )
+    for (const d of nameTops) this.registerExcludedDir(d, target)
     const isExcluded = (p: string): boolean => {
       const lower = p.toLowerCase()
       return excluded.some((d) => lower.startsWith(`${d.toLowerCase()}\\`))
@@ -915,6 +993,22 @@ export class ScanEngine {
       const arr = this.dirFiles.get(parent)
       if (arr) arr.push(item)
       else this.dirFiles.set(parent, [item])
+    }
+
+    // 5) 排除目录的空节点重登记（不参与体量，仅占位呈现）
+    for (const [dir, target] of this.excludedDirs) this.recordDirChain(dir, target)
+  }
+
+  /** 沿祖先链补登记目录节点（排除目录用；不累加字节） */
+  private recordDirChain(dir: string, target: string): void {
+    const stop = this.stopOf(target)
+    let p = dir
+    for (;;) {
+      const lp = this.keyOf(p)
+      if (lp === stop || !lp.startsWith(stop + '\\')) break
+      if (this.dirs.has(p)) break // 已登记，其祖先必已登记
+      this.recordDir(p)
+      p = path.dirname(p)
     }
   }
 

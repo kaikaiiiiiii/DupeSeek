@@ -16,9 +16,6 @@
         ><input v-model="scan.draft.excludeJunction" type="checkbox" /> 排除 junction /
         链接目录（防循环）</label
       >
-      <label class="check-row"
-        ><input v-model="scan.draft.excludeNodeModules" type="checkbox" /> 忽略 node_modules</label
-      >
       <!-- 压缩包内容解析开关已移至「设置」页 -->
 
       <div class="size-row">
@@ -59,6 +56,22 @@
       <div class="text-row">
         <label class="text-label">扩展名白名单</label>
         <input v-model="whitelistText" class="input grow" placeholder="留空表示不限制" />
+      </div>
+      <div class="text-row">
+        <label class="text-label">排除的目录名</label>
+        <input
+          v-model="scan.draft.excludeDirNames"
+          class="input grow"
+          placeholder="逗号分隔，如 node_modules（任意层级同名目录按空目录呈现）"
+        />
+      </div>
+      <div class="text-row">
+        <label class="text-label">排除的目录路径</label>
+        <input
+          v-model="scan.draft.excludeDirPaths"
+          class="input grow"
+          placeholder="逗号分隔绝对路径，该目录整棵子树按空目录呈现"
+        />
       </div>
     </div>
 
