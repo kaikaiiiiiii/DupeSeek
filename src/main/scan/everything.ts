@@ -73,7 +73,10 @@ function parseInWorker(paths: string[], timeoutMs: number): Promise<EverythingLi
       void w.terminate()
       fn()
     }
-    const timer = setTimeout(() => finish(() => reject(new Error('es 解析 worker 超时'))), timeoutMs)
+    const timer = setTimeout(
+      () => finish(() => reject(new Error('es 解析 worker 超时'))),
+      timeoutMs
+    )
     w.on('message', (msg: { ok: boolean; error?: string } & Partial<EverythingListResult>) => {
       finish(() => {
         if (msg.ok && msg.files && msg.dirs && msg.reparse) {
