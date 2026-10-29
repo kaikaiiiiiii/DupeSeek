@@ -256,8 +256,8 @@ export const useTreeSizeStore = defineStore('treesize', () => {
     if (sortKey.value === 'name') {
       const agg = items.filter((i): i is TreeAggRow => i.kind === 'aggregate')
       const dirs = items.filter((i): i is TreeDirRow => i.kind === 'dir')
-      dirs.sort((a, b) =>
-        dirFlag * a.data.name.localeCompare(b.data.name, undefined, { numeric: true })
+      dirs.sort(
+        (a, b) => dirFlag * a.data.name.localeCompare(b.data.name, undefined, { numeric: true })
       )
       return [...dirs, ...agg]
     }

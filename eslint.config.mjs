@@ -5,7 +5,16 @@ import eslintPluginVue from 'eslint-plugin-vue'
 import vueParser from 'vue-eslint-parser'
 
 export default defineConfig(
-  { ignores: ['**/node_modules', '**/dist', '**/out', 'tools/cleanDuplicateFiles.v2.js'] },
+  {
+    ignores: [
+      '**/node_modules',
+      '**/dist',
+      '**/out',
+      // tools/ 下的诊断探针为 CommonJS 脚本（electron 直跑），不走 lint 规则
+      'tools/*.js',
+      'tools/cleanDuplicateFiles.v2.js'
+    ]
+  },
   tseslint.configs.recommended,
   eslintPluginVue.configs['flat/recommended'],
   {

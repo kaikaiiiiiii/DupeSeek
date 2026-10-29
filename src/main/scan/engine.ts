@@ -386,12 +386,7 @@ export class ScanEngine {
   /** 重归属的体量补记：注册时字节只累加到旧归属根，归属改浅后需把
    *  旧归属根之上的祖先链补齐（新归属更深时无需补——链上本就计过）。
    *  dup 同理（dupBytes 为该条目作为非保留副本的分摊） */
-  private extendBytes(
-    e: FileEntry,
-    oldOwner: string,
-    newOwner: string,
-    dupBytes: number
-  ): void {
+  private extendBytes(e: FileEntry, oldOwner: string, newOwner: string, dupBytes: number): void {
     const stopNew = this.stopOf(newOwner)
     const stopOld = this.stopOf(oldOwner)
     if (stopNew === stopOld || stopNew.startsWith(stopOld + '\\')) return

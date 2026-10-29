@@ -70,7 +70,9 @@ if (roots.dirs.length > 0) {
     `[children ${first.path}] dirs = ${kids?.dirs.length ?? 'null'} agg = ${JSON.stringify(kids?.agg)}`
   )
   for (const d of kids?.dirs.slice(0, 3) ?? []) {
-    console.log(`  child ${d.name} size=${d.size} childDirs=${d.childDirs} fileCount=${d.fileCount}`)
+    console.log(
+      `  child ${d.name} size=${d.size} childDirs=${d.childDirs} fileCount=${d.fileCount}`
+    )
   }
   const files = engine.treeFiles(first.path, 'size', true, 0, 5)
   console.log(`[files ${first.path}] total = ${files?.total} rows = ${files?.rows.length}`)
