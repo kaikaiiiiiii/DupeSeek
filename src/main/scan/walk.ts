@@ -3,13 +3,50 @@ import path from 'path'
 import type { FileEntry, ScanSettings } from '../../shared/types'
 
 /** Windows 上默认排除的系统目录名 */
-const SYSTEM_DIRS = new Set(['$RECYCLE.BIN', 'System Volume Information', 'WindowsApps'])
+export const SYSTEM_DIRS = new Set(['$RECYCLE.BIN', 'System Volume Information', 'WindowsApps'])
+
+/** 目录排除集：名称匹配（任意层级同名 → 空节点）与路径匹配（整棵子树 → 空节点） */
+export interface DirExclusions {
+  names: Set<string>
+  /** 归一化（小写 + 去尾分隔符）后的路径前缀 */
+  pathStops: string[]
+}
+
+export function buildDirExclusions(settings: ScanSettings): DirExclusions {
+  const names = new Set(
+    settings.excludeDirNames
+      .split(/[,，;；\n]/)
+      .map((s) => s.trim())
+      .filter((s) => s !== '')
+  )
+  const pathStops = settings.excludeDirPaths
+    .split(/[,，;；\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+    .map((s) => {
+      const stripped = (process.platform === 'win32' ? s.toLowerCase() : s).replace(
+        /[\\/]+$/,
+        ''
+      )
+      return /^[a-zA-Z]:$/.test(stripped) ? stripped + '\\' : stripped
+    })
+  return { names, pathStops }
+}
+
+/** 路径是否落在某个排除路径之内（含其自身） */
+export function isPathExcludedDir(p: string, excl: DirExclusions): boolean {
+  const norm = (process.platform === 'win32' ? p.toLowerCase() : p).replace(/[\\/]+$/, '')
+  return excl.pathStops.some((e) => norm === e || norm.startsWith(e + '\\'))
+}
 
 export interface WalkContext {
   settings: ScanSettings
+  excl: DirExclusions
   canceled: () => boolean
   onEntry: (entry: FileEntry) => void
   onDir: (dirPath: string) => void
+  /** 命中排除规则的目录：登记为空节点但不进入（不扫描其子目录与文件） */
+  onExcludedDir: (dirPath: string) => void
   onError: (p: string, err: unknown) => void
 }
 
@@ -78,12 +115,17 @@ export async function walkTargets(roots: string[], ctx: WalkContext): Promise<vo
 
   const visited = new Set<string>()
 
-  while (stack.length > 0) {
-    if (ctx.canceled()) return
-    const dir = stack.pop() as string
-    if (visited.has(dir)) continue
-    visited.add(dir)
-    ctx.onDir(dir)
+    while (stack.length > 0) {
+      if (ctx.canceled()) return
+      const dir = stack.pop() as string
+      if (visited.has(dir)) continue
+      visited.add(dir)
+      // 目标根本身被排除（或名称命中）时：按空节点呈现，不枚举其内容
+      if (ctx.excl.names.has(path.basename(dir)) || isPathExcludedDir(dir, ctx.excl)) {
+        ctx.onExcludedDir(dir)
+        continue
+      }
+      ctx.onDir(dir)
 
     let dirents: fs.Dirent[]
     try {
@@ -97,7 +139,13 @@ export async function walkTargets(roots: string[], ctx: WalkContext): Promise<vo
       if (ctx.canceled()) return
       const full = path.join(dir, d.name)
       if (d.isDirectory()) {
-        if (settingsExcludesDir(d.name, ctx.settings)) continue
+        if (ctx.settings.excludeHidden && d.name.startsWith('.')) continue
+        if (ctx.settings.excludeSystem && SYSTEM_DIRS.has(d.name)) continue
+        // 排除目录：登记为空节点，不进入（其子树整体不扫描）
+        if (ctx.excl.names.has(d.name) || isPathExcludedDir(full, ctx.excl)) {
+          ctx.onExcludedDir(full)
+          continue
+        }
         // junction / 目录符号链接按设置跳过；lstat 才能识别链接本身
         if (ctx.settings.excludeJunction) {
           try {
@@ -113,11 +161,4 @@ export async function walkTargets(roots: string[], ctx: WalkContext): Promise<vo
       }
     }
   }
-}
-
-export function settingsExcludesDir(name: string, settings: ScanSettings): boolean {
-  if (settings.excludeHidden && name.startsWith('.')) return true
-  if (settings.excludeSystem && SYSTEM_DIRS.has(name)) return true
-  if (settings.excludeNodeModules && name === 'node_modules') return true
-  return false
 }

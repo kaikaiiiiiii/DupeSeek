@@ -2,7 +2,7 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { defaultScanDraft } from '../shared/defaults'
-import type { AppSettings } from '../shared/types'
+import type { AppSettings, ScanSettings } from '../shared/types'
 
 function defaults(): AppSettings {
   return {
@@ -22,9 +22,15 @@ export function loadSettings(): AppSettings {
   const base = defaults()
   try {
     const raw = JSON.parse(fs.readFileSync(settingsFile(), 'utf-8')) as Partial<AppSettings>
+    const scanDraft: ScanSettings = { ...base.scanDraft, ...(raw.scanDraft ?? {}) }
+    // 旧版布尔开关迁移：用户曾关闭「忽略 node_modules」→ 名称排除列表置空
+    if (scanDraft.excludeDirNames === base.scanDraft.excludeDirNames) {
+      const legacy = (raw.scanDraft as Record<string, unknown> | undefined)?.excludeNodeModules
+      if (legacy === false) scanDraft.excludeDirNames = ''
+    }
     cached = {
       targets: Array.isArray(raw.targets) ? raw.targets : base.targets,
-      scanDraft: { ...base.scanDraft, ...(raw.scanDraft ?? {}) },
+      scanDraft,
       resumeScan: raw.resumeScan === true
     }
   } catch {
