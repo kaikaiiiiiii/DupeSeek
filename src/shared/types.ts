@@ -204,6 +204,8 @@ export interface DupeSeekApi {
   ): Promise<TreeFilesReply | null>
 
   onScanProgress(cb: (p: ScanProgress) => void): () => void
+  /** 体积树版本广播（移除目标等不伴随 progress 的变更） */
+  onTreeRev(cb: (p: { rev: number }) => void): () => void
   onScanGroup(cb: (p: { sessionId: string; groups: DupeGroup[] }) => void): () => void
   onScanDone(cb: (s: ScanSummary) => void): () => void
   onScanError(cb: (p: { sessionId: string; message: string }) => void): () => void

@@ -223,6 +223,8 @@ export const useTreeSizeStore = defineStore('treesize', () => {
       if (v >= 0) setRev(v)
     }
   )
+  // 移除目标等不伴随 progress 的变更经 scan:rev 广播，同样跟随
+  window.api.onTreeRev((p) => setRev(p.rev))
   // 初始拉取根级
   void ensureChildren(ROOT)
 
