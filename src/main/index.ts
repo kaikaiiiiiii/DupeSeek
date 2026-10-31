@@ -43,7 +43,8 @@ const [osMajor, , osBuild] = os.release().split('.').map(Number)
 const supportsMica = isWin && (osMajor > 10 || osBuild >= 22621)
 if (supportsMica) process.env['DUPESEEK_MICA'] = '1'
 const overlayColors = (dark: boolean): Electron.TitleBarOverlayOptions => ({
-  color: dark ? '#202020' : '#f3f3f3',
+  // 透明底：按钮直接浮在 Mica 材质上，与标题栏其它位置无缝
+  color: '#00000000',
   symbolColor: dark ? '#f2f2f2' : '#1a1a1a',
   height: 36
 })

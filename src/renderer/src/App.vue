@@ -141,18 +141,33 @@ watch(
 }
 
 .tab-btn {
-  padding: 8px 20px;
-  border: 1px solid var(--border);
-  border-bottom: none;
-  border-radius: 6px 6px 0 0;
-  background: var(--hover-bg);
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
   cursor: pointer;
+  position: relative;
+}
+
+.tab-btn:hover {
+  background: var(--hover-bg);
 }
 
 .tab-btn.active {
-  background: var(--bg);
   font-weight: 600;
-  box-shadow: inset 0 2px 0 var(--accent);
+  color: var(--accent);
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 2px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 
 .tab-content {
