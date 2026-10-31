@@ -24,13 +24,18 @@
               @click="onRowClick(item as TreeRow)"
             >
               <span v-for="i in view(item as TreeRow).depth" :key="i" class="indent-gap"></span>
-              <span class="disclosure">{{ view(item as TreeRow).arrow }}</span>
+              <span class="disclosure" :class="{ exp: view(item as TreeRow).expandedRow }">
+                <AppIcon v-if="view(item as TreeRow).arrow" name="chevron" />
+              </span>
               <TreeIcon
                 :path="view(item as TreeRow).iconPath"
                 :kind="view(item as TreeRow).iconKind"
               />
               <span class="inline-size">{{ view(item as TreeRow).sizeText }}</span>
-              <span class="dir-name" :title="view(item as TreeRow).fullPath">{{
+              <span v-if="view(item as TreeRow).loading" class="dir-name"
+                ><span class="skeleton" style="width: 42%"></span
+              ></span>
+              <span v-else class="dir-name" :title="view(item as TreeRow).fullPath">{{
                 view(item as TreeRow).name
               }}</span>
               <span class="dir-size">{{ view(item as TreeRow).sizeText }}</span>
@@ -57,6 +62,7 @@ import { computed, ref } from 'vue'
 import { useScanStore } from '../stores/scan'
 import { useTreeSizeStore, type TreeRow } from '../stores/treesize'
 import { formatBytes } from '../utils/format'
+import AppIcon from './AppIcon.vue'
 import VirtualScrollList from './VirtualScrollList.vue'
 import TreeIcon from './TreeIcon.vue'
 
@@ -101,6 +107,7 @@ function startResize(ev: MouseEvent, which: 'size' | 'dup'): void {
 }
 
 interface RowView {
+  loading: boolean
   depth: number
   /** '>' 收起 / '∨' 展开 / '' 不可展开 */
   arrow: string
@@ -112,17 +119,20 @@ interface RowView {
   dupText: string
   dupOn: boolean
   expandable: boolean
+  expandedRow: boolean
 }
 
 function view(item: TreeRow): RowView {
   if (item.kind === 'loading') {
     return {
+      loading: true,
       depth: item.depth,
       arrow: '',
+      expandedRow: false,
       iconKind: 'file',
       iconPath: '',
       sizeText: '',
-      name: '加载中…',
+      name: '',
       fullPath: '',
       dupText: '—',
       dupOn: false,
@@ -133,8 +143,10 @@ function view(item: TreeRow): RowView {
     const d = item.data
     const expandable = d.childDirs > 0 || d.fileCount > 0
     return {
+      loading: false,
       depth: item.depth,
-      arrow: expandable ? (treesize.expanded.has(item.id) ? '∨' : '>') : '',
+      arrow: expandable ? '>' : '',
+      expandedRow: expandable && treesize.expanded.has(item.id),
       iconKind: 'dir',
       iconPath: d.path,
       sizeText: formatBytes(d.size),
@@ -147,8 +159,10 @@ function view(item: TreeRow): RowView {
   }
   if (item.kind === 'aggregate') {
     return {
+      loading: false,
       depth: item.depth,
-      arrow: treesize.expanded.has(item.id) ? '∨' : '>',
+      arrow: '>',
+      expandedRow: treesize.expanded.has(item.id),
       iconKind: 'aggregate',
       iconPath: '',
       sizeText: formatBytes(item.size),
@@ -160,8 +174,10 @@ function view(item: TreeRow): RowView {
     }
   }
   return {
+    loading: false,
     depth: item.depth,
     arrow: '',
+    expandedRow: false,
     iconKind: 'file',
     iconPath: item.path,
     sizeText: formatBytes(item.size),
@@ -295,6 +311,19 @@ function barStyle(item: TreeRow): Record<string, string> {
   width: 14px;
   flex-shrink: 0;
   color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.disclosure svg {
+  width: 11px;
+  height: 11px;
+  transition: transform 0.12s ease;
+}
+
+.disclosure.exp svg {
+  transform: rotate(90deg);
 }
 
 /* 图标与行内体积之间的间距；.tree-icon 定义在 TreeIcon.vue */

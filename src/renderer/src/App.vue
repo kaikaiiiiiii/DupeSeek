@@ -1,8 +1,12 @@
 <template>
-  <div class="app-root">
-    <aside class="app-left">
-      <TargetList />
-    </aside>
+  <div class="app-shell">
+    <div v-if="isWin" class="titlebar">
+      <span class="tb-title">DupeSeek</span>
+    </div>
+    <div class="app-root">
+      <aside class="app-left">
+        <TargetList />
+      </aside>
     <div class="app-right">
       <nav class="tab-bar">
         <button
@@ -21,11 +25,13 @@
         </KeepAlive>
       </div>
     </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { initTheme } from './utils/theme'
 import DupeList from './components/DupeList.vue'
 import ScanView from './components/ScanView.vue'
 import SettingsView from './components/SettingsView.vue'
@@ -50,7 +56,10 @@ const current = computed(
   () => tabs.find((t) => t.id === activeTab.value)?.component ?? TreeSizeView
 )
 
+const isWin = window.api.platform === 'win32'
+
 onMounted(async () => {
+  initTheme()
   const settings = await useSettingsStore().load()
   useTargetStore().init(settings.targets)
   useScanStore().initDraft(settings.scanDraft)
@@ -82,9 +91,33 @@ watch(
 </script>
 
 <style scoped>
-.app-root {
+.app-shell {
   width: 100%;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.titlebar {
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 12px 0 14px;
+  margin-right: 140px; /* 为系统标题栏按钮（titleBarOverlay）留位 */
+  -webkit-app-region: drag;
+}
+
+.tb-title {
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.app-root {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   display: flex;
   gap: 10px;
 }

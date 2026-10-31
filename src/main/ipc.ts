@@ -46,6 +46,21 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('app:set-settings', (_e, patch: Partial<AppSettings>) => saveSettings(patch))
   ipcMain.handle('app:capabilities', () => detectCapabilities())
   ipcMain.handle('app:file-icons', (_e, paths: string[]) => fileIcons(paths))
+  // 主题切换时同步 Win11 标题栏按钮配色（未启用 overlay 的环境忽略）
+  ipcMain.handle('app:overlay-theme', (_e, dark: boolean) => {
+    const win = getWindow()
+    if (process.platform === 'win32' && win && !win.isDestroyed()) {
+      try {
+        win.setTitleBarOverlay(
+          dark
+            ? { color: '#202020', symbolColor: '#f2f2f2', height: 36 }
+            : { color: '#f3f3f3', symbolColor: '#1a1a1a', height: 36 }
+        )
+      } catch {
+        /* titleBarOverlay 未启用 */
+      }
+    }
+  })
   ipcMain.handle('tree:roots', (_e, sortKey: TreeSortKey, desc: boolean) =>
     engine.treeRoots(sortKey, desc)
   )

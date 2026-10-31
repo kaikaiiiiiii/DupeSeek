@@ -18,9 +18,12 @@ function plainJson<T>(value: T): T {
 }
 
 const api: DupeSeekApi = {
+  platform: process.platform,
+  mica: process.env['DUPESEEK_MICA'] === '1',
   selectTargets: (kind) => ipcRenderer.invoke('dialog:select-targets', kind),
   reveal: (path) => ipcRenderer.invoke('fs:reveal', path),
   pathForFile: (file) => webUtils.getPathForFile(file),
+  setOverlayTheme: (dark) => ipcRenderer.invoke('app:overlay-theme', dark),
   scanSync: (settings) => ipcRenderer.invoke('scan:sync', plainJson(settings)),
   scanRescan: (settings) => ipcRenderer.invoke('scan:rescan', plainJson(settings)),
   scanStop: (sessionId) => ipcRenderer.send('scan:stop', sessionId),

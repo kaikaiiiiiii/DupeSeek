@@ -110,6 +110,7 @@
         v-if="deniedCount > 0 && (scan.status === 'scanning' || scan.status === 'done')"
         class="elevate-box"
       >
+        <AppIcon class="elevate-icon" name="shield" />
         <span class="elevate-text">
           有 {{ deniedCount }} 个文件或目录需要管理员权限才能读取，本次结果可能不完整。
         </span>
@@ -135,6 +136,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ScanPhase } from '../../../shared/types'
+import AppIcon from './AppIcon.vue'
 import { useScanStore } from '../stores/scan'
 import { useTargetStore } from '../stores/target'
 import { formatBytes, formatDuration } from '../utils/format'
@@ -349,13 +351,20 @@ async function startScan(): Promise<void> {
   gap: 8px;
   margin-top: 8px;
   padding: 8px 10px;
-  border: 1px solid var(--danger);
-  border-radius: 4px;
+  border: 1px solid var(--info-bd);
+  border-radius: var(--radius, 8px);
+  background: var(--info-bg);
+}
+
+.elevate-icon {
+  color: var(--accent);
+  font-size: 16px;
+  flex-shrink: 0;
 }
 
 .elevate-text {
   flex: 1;
-  color: var(--danger);
+  color: var(--text);
 }
 
 .elevate-msg {

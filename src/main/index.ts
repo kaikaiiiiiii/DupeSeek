@@ -1,5 +1,6 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, nativeTheme, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
+import os from 'os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { closeHashPool } from './scan/hashPool'
@@ -36,6 +37,17 @@ const handoverPid = Number(argValue('--handover-pid'))
 // 扫描枚举需要真实文件系统语义：.asar 是普通文件而非虚拟目录
 process.noAsar = true
 
+// —— Win11 视觉（Fluent 2）：Mica 材质与自绘标题栏，旧系统自动回退 ——
+const isWin = process.platform === 'win32'
+const [osMajor, , osBuild] = os.release().split('.').map(Number)
+const supportsMica = isWin && (osMajor > 10 || osBuild >= 22621)
+if (supportsMica) process.env['DUPESEEK_MICA'] = '1'
+const overlayColors = (dark: boolean): Electron.TitleBarOverlayOptions => ({
+  color: dark ? '#202020' : '#f3f3f3',
+  symbolColor: dark ? '#f2f2f2' : '#1a1a1a',
+  height: 36
+})
+
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -45,7 +57,16 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     title: 'DupeSeek',
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(!isWin && process.platform === 'linux' ? { icon } : {}),
+    ...(isWin
+      ? {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: overlayColors(nativeTheme.shouldUseDarkColors),
+          ...(supportsMica
+            ? { backgroundMaterial: 'mica' as const, backgroundColor: '#00000000' }
+            : {})
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
