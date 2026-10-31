@@ -1,0 +1,22 @@
+# 引擎测试：依赖 Windows 路径语义（path.dirname/反斜杠），固定 windows runner
+name: test
+
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: 安装依赖
+        run: npm ci
+      - name: 测试
+        run: npm run test

@@ -105,7 +105,7 @@ async function pMap<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>
 type HashSlot = 'headmd5' | 'fullmd5'
 
 /** 目标路径规范化：去尾部分隔符；裸盘符（D:）补全为根形式；剥空（本身就是盘根）保持原样 */
-function canonicalTarget(t: string): string {
+export function canonicalTarget(t: string): string {
   const stripped = t.replace(/[\\/]+$/, '')
   if (stripped === '') return t
   return /^[a-zA-Z]:$/.test(stripped) ? stripped + '\\' : stripped
@@ -168,6 +168,8 @@ export class ScanEngine {
   private entries = new Map<string, FileEntry>()
   private owners = new Map<string, string>()
   private coveredTargets = new Set<string>()
+  /** coveredTargets 的 keyOf 归一集合：Windows 上大小写变体视为同一目标 */
+  private coveredKeys = new Set<string>()
   private knownGroups = new Map<string, DupeGroup>()
 
   constructor(broadcaster: Broadcaster) {
@@ -205,9 +207,9 @@ export class ScanEngine {
     if (canon.targets.length === 0) throw new Error('请先添加扫描目标')
     this.excl = buildDirExclusions(canon)
 
-    const requested = new Set(canon.targets)
-    const addList = canon.targets.filter((t) => !this.coveredTargets.has(t))
-    const removeList = [...this.coveredTargets].filter((t) => !requested.has(t))
+    const requested = new Set(canon.targets.map((t) => this.keyOf(t)))
+    const addList = canon.targets.filter((t) => !this.coveredKeys.has(this.keyOf(t)))
+    const removeList = [...this.coveredTargets].filter((t) => !requested.has(this.keyOf(t)))
 
     this.running = true
     this.canceled = false
@@ -219,7 +221,10 @@ export class ScanEngine {
     getHashPool().resetDenied()
     this.sessionId = randomUUID()
     this.progressTargets = addList
-    for (const t of addList) this.coveredTargets.add(t)
+    for (const t of addList) {
+      this.coveredTargets.add(t)
+      this.coveredKeys.add(this.keyOf(t))
+    }
     const sessionId = this.sessionId
     const startedAt = Date.now()
 
@@ -288,6 +293,7 @@ export class ScanEngine {
     this.entries.clear()
     this.owners.clear()
     this.coveredTargets.clear()
+    this.coveredKeys.clear()
     this.excludedDirs.clear()
     this.knownGroups.clear()
     this.foundPerTarget.clear()
@@ -341,8 +347,9 @@ export class ScanEngine {
   }
 
   /** 立即生效：根集合摘除（根行即从查询结果消失），重活入队后台执行 */
-  private scheduleRemoval(target: string): void {
+  scheduleRemoval(target: string): void {
     this.coveredTargets.delete(target)
+    this.coveredKeys.delete(this.keyOf(target))
     this.foundPerTarget.delete(target)
     this.processedPerTarget.delete(target)
     this.removalTasks.push(target)
@@ -362,6 +369,46 @@ export class ScanEngine {
       this.cleaningUp = false
     }
     this.broadcastRev()
+  }
+
+  /** 等待在途移除清理完成（测试与串行化用） */
+  async whenSettled(): Promise<void> {
+    while (this.cleaningUp || this.removalTasks.length > 0) {
+      await new Promise<void>((r) => setImmediate(r))
+    }
+  }
+
+  /** 内部状态快照（测试与 tools/ 诊断用） */
+  diag(): { entries: number; owners: number; dirs: number; excludedDirs: number } {
+    return {
+      entries: this.entries.size,
+      owners: this.owners.size,
+      dirs: this.dirs.size,
+      excludedDirs: this.excludedDirs.size
+    }
+  }
+
+  /** 内部状态查询（测试与 tools/ 诊断用；原始大小写路径） */
+  diagEntry(path: string): FileEntry | undefined {
+    return this.entries.get(this.keyOf(path))
+  }
+
+  diagDir(path: string): { size: number; dup: number } | undefined {
+    const r = this.dirs.get(path)
+    return r ? { size: r.size, dup: r.dup } : undefined
+  }
+
+  /** 内部状态查询（测试与 tools/ 诊断用）：已确认重复组及成员路径 */
+  diagEntries(): string[] {
+    return [...this.entries.keys()]
+  }
+
+  diagGroups(): Array<{ key: string; paths: string[]; wasted: number }> {
+    return [...this.knownGroups.values()].map((g) => ({
+      key: g.key,
+      paths: g.entries.map((e) => e.path),
+      wasted: g.size * (g.entries.length - 1)
+    }))
   }
 
   /** 单个目标的后台清理：重归属（含体量补记）/删除（含体量反扣、文件行
@@ -425,7 +472,7 @@ export class ScanEngine {
     const stopNew = this.stopOf(newOwner)
     const stopOld = this.stopOf(oldOwner)
     if (stopNew === stopOld || stopNew.startsWith(stopOld + '\\')) return
-    let p = oldOwner
+    let p = path.dirname(oldOwner)
     for (;;) {
       const rec = this.dirs.get(p)
       if (!rec) break
@@ -771,6 +818,7 @@ export class ScanEngine {
     // node_modules：Everything 返回全量数据，直接按目录名收集前缀后从数组剔除
     const excluded: string[] = []
     const dirOk: string[] = []
+    console.log('[dbg] listVia dir =', target, '| pathStops =', JSON.stringify(this.excl.pathStops), '| names =', JSON.stringify([...this.excl.names]))
     // 设置中的路径排除：其子树文件/目录一律按前缀过滤
     for (const e of this.excl.pathStops) excluded.push(e)
     const nameHits: string[] = []
@@ -807,15 +855,20 @@ export class ScanEngine {
       const na = norm(ancestor)
       return np === na || np.startsWith(na + '\\')
     }
-    const pathTops = pathHits.filter((d) => !pathHits.some((o) => o !== d && inside(d, o)))
-    for (const d of pathTops) this.registerExcludedDir(d, target)
-    // 名称命中：位于其它名称命中或路径排除之内时由其顶代表
+    // 名称命中先收敛（嵌套同名由顶层代表；位于路径排除之内的同样跳过）
     const nameTops = nameHits.filter(
       (d) =>
         !nameHits.some((o) => o !== d && inside(d, o)) &&
-        !pathTops.some((t) => inside(d, t))
+        !pathHits.some((o) => inside(d, o))
     )
     for (const d of nameTops) this.registerExcludedDir(d, target)
+    // 路径命中收敛：不被名称命中或其它路径命中包含的最顶层
+    const pathTops = pathHits.filter(
+      (d) =>
+        !pathHits.some((o) => o !== d && inside(d, o)) &&
+        !nameTops.some((t) => inside(d, t))
+    )
+    for (const d of pathTops) this.registerExcludedDir(d, target)
     const isExcluded = (p: string): boolean => {
       const lower = p.toLowerCase()
       return excluded.some((d) => lower.startsWith(`${d.toLowerCase()}\\`))
@@ -832,6 +885,7 @@ export class ScanEngine {
       }
       // reparse 文件（文件符号链接/云占位文件）：读取前者会穿越链接、
       // 读取后者会触发云端下载，均不符合本地查重的定位
+      console.log('[dbg] file =', f.filename, '| excluded =', isExcluded(f.filename), '| excludedArr =', JSON.stringify(excluded))
       if (isExcluded(f.filename) || (isReparse(f.filename) && skipReparse)) continue
       const name = path.basename(f.filename)
       if (settings.excludeHidden && name.startsWith('.')) continue
