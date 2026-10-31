@@ -175,9 +175,15 @@ export interface AppCapabilities {
 
 /** 渲染层通过 preload 可用的 API，定义见 docs/IPC.md */
 export interface DupeSeekApi {
+  /** 运行平台（process.platform） */
+  platform: string
+  /** Win11 Mica 材质是否已启用（标题栏/页面底透明染色用） */
+  mica: boolean
   selectTargets(kind: 'dir' | 'file' | 'both'): Promise<string[] | null>
   reveal(path: string): Promise<void>
   pathForFile(file: File): string
+  /** 主题切换时同步 Win11 标题栏按钮配色 */
+  setOverlayTheme(dark: boolean): Promise<void>
   /** 目标列表同步：新增目标增量扫描，移除目标纯内存清理 */
   scanSync(settings: ScanSettings): Promise<ScanSummary>
   /** 清空会话状态后整体重扫 */

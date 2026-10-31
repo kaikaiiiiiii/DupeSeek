@@ -38,14 +38,16 @@
     </div>
 
     <div class="footer">
-      <button class="add-btn" title="添加目录" :disabled="busy" @click="addByDialog">＋</button>
+      <button class="add-btn" title="添加目录" :disabled="busy" @click="addByDialog">
+        <AppIcon name="plus" />
+      </button>
       <button
         class="clear-btn"
         title="清空列表"
         :disabled="targets.length === 0 || busy"
         @click="clearAll"
       >
-        🗑
+        <AppIcon name="trash" />
       </button>
     </div>
   </aside>
@@ -56,6 +58,7 @@ import { computed, ref } from 'vue'
 import { useScanStore } from '../stores/scan'
 import { useTargetStore } from '../stores/target'
 import { baseName } from '../utils/format'
+import AppIcon from './AppIcon.vue'
 import VirtualScrollList from './VirtualScrollList.vue'
 
 const targetStore = useTargetStore()
@@ -219,14 +222,15 @@ async function reveal(path: string): Promise<void> {
   border: none;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
 }
 
 .add-btn:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: var(--accent);
+  filter: brightness(1.15);
 }
 
 .add-btn:disabled {

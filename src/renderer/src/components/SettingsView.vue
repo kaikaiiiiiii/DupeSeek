@@ -29,6 +29,14 @@
     </div>
     <div class="settings-card">
       <div class="card-title">能力检测</div>
+      <div class="text-row">
+        <label class="text-label">主题</label>
+        <select class="input" :value="themeSel" @change="onThemeChange">
+          <option value="system">跟随系统</option>
+          <option value="light">亮色</option>
+          <option value="dark">暗色</option>
+        </select>
+      </div>
       <div class="cap-row">
         <span class="cap-label">RAR 内容读取（内置 unrar）</span>
         <span v-if="caps === null" class="cap-value">检测中…</span>
@@ -59,6 +67,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import type { AppCapabilities } from '../../../shared/types'
+import { applyTheme, themeMode, type ThemeMode } from '../utils/theme'
 import { useScanStore } from '../stores/scan'
 import { useSettingsStore } from '../stores/settings'
 import { deepPlain } from '../utils/plain'
@@ -67,6 +76,12 @@ const scan = useScanStore()
 
 /** 本机能力检测结果（进入设置页时探测一次） */
 const caps = ref<AppCapabilities | null>(null)
+const themeSel = ref<ThemeMode>(themeMode())
+
+function onThemeChange(ev: Event): void {
+  themeSel.value = (ev.target as HTMLSelectElement).value as ThemeMode
+  applyTheme(themeSel.value)
+}
 onMounted(() => {
   void window.api.capabilities().then((c) => {
     caps.value = c
@@ -143,7 +158,7 @@ function setScanArchives(v: boolean): void {
 }
 
 .cap-value.ok {
-  color: #1a7f37;
+  color: var(--ok);
   font-weight: 600;
 }
 

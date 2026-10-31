@@ -1,15 +1,61 @@
 :root {
-  --bg: #ffffff;
-  --hover-bg: #f4f5f7;
+  color-scheme: light;
+  --bg: #f3f3f3;
+  --surface: #ffffff;
+  --surface-alt: #f9f9fb;
+  --hover-bg: #eceef3;
   --border: #d0d3d9;
-  --border-light: #ececf0;
-  --text: #24292f;
-  --muted: #7a828c;
-  --accent: #2563eb;
-  --accent-soft: #e8effd;
-  --danger: #d43a3a;
-  --size-bar: rgba(250, 204, 21, 0.35);
-  --dup-bar: rgba(236, 72, 153, 0.35);
+  --border-light: #e8eaee;
+  --text: #1a1a1a;
+  --muted: #6b7078;
+  --accent: #0067c0;
+  --accent-soft: #cfe4f7;
+  --accent-fg: #ffffff;
+  --danger: #c42b1c;
+  --danger-soft: #fdf3f2;
+  --ok: #0e7a4d;
+  --info-bg: #e8f1fb;
+  --info-bd: #c6ddf2;
+  --size-bar: rgba(245, 194, 66, 0.5);
+  --dup-bar: rgba(240, 98, 146, 0.45);
+  --shadow: 0 8px 24px rgba(20, 40, 80, 0.12);
+  --radius: 8px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #202020;
+  --surface: #2b2b2b;
+  --surface-alt: #272729;
+  --hover-bg: #2e3440;
+  --border: #3f3f46;
+  --border-light: #333338;
+  --text: #f2f2f2;
+  --muted: #9d9da3;
+  --accent: #4cc2ff;
+  --accent-soft: #123a4d;
+  --accent-fg: #08111a;
+  --danger: #ff99a4;
+  --danger-soft: #3a2226;
+  --ok: #6ccb9b;
+  --info-bg: #16303f;
+  --info-bd: #1f4658;
+  --size-bar: rgba(245, 194, 66, 0.55);
+  --dup-bar: rgba(240, 98, 146, 0.5);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --radius: 8px;
+}
+
+/* Mica 激活（Win11）：窗口底为系统材质，页面底改为半透明染色 */
+html.mica {
+  --bg: rgba(243, 243, 243, 0.6);
+}
+html.mica[data-theme='dark'] {
+  --bg: rgba(32, 32, 32, 0.55);
+}
+html.mica body,
+html.mica #app {
+  background: transparent;
 }
 
 * {
@@ -28,7 +74,7 @@ body {
     system-ui, sans-serif;
   font-size: 13px;
   color: var(--text);
-  background: var(--hover-bg);
+  background: var(--bg);
 }
 
 button {
@@ -39,7 +85,8 @@ button {
   padding: 5px 14px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: var(--bg);
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
 }
 
@@ -55,7 +102,7 @@ button {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
 }
 
 .btn.danger {
@@ -72,10 +119,12 @@ button {
   background: none;
   cursor: pointer;
   padding: 2px 4px;
+  color: var(--muted);
 }
 
 .icon-btn:hover {
   background: var(--hover-bg);
+  color: var(--text);
 }
 
 .icon-btn.danger:hover {
@@ -87,9 +136,49 @@ button {
   border: 1px solid var(--border);
   border-radius: 4px;
   font: inherit;
-  background: var(--bg);
+  background: var(--surface);
+  color: var(--text);
 }
 
 .input:focus {
   outline: 1px solid var(--accent);
+}
+
+/* 加载骨架屏（shimmer） */
+.skeleton {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--hover-bg) 25%, var(--border-light) 50%, var(--hover-bg) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* 共享表单行（label + 输入） */
+.text-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 4px 20px;
+}
+
+.text-label {
+  width: 110px;
+  flex-shrink: 0;
+  color: var(--muted);
 }
