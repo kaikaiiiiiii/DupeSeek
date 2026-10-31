@@ -62,6 +62,7 @@ src
 ## 开发协作流程
 
 * 每次代码改动完成后，自动用新代码重启应用供用户即时检查：先结束正在运行的旧实例（Windows：按窗口标题 `DupeSeek` 定位 electron.exe 主进程再结束，不要按映像名整体误杀其它 Electron 应用），再后台启动 `npm run dev` 并确认窗口拉起。
+* 合入 dev 前必须通过 `npm run test`（vitest，覆盖引擎纯逻辑；依赖 Windows 路径语义，CI 在 windows-latest 上执行）。修复 bug 时先在 tests/ 补一条能复现该 bug 的回归用例，再修代码。
 
 ## Never 规则
 - Never 修改框架自动生成的目录
