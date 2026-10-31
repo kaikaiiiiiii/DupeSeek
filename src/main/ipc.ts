@@ -51,11 +51,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     const win = getWindow()
     if (process.platform === 'win32' && win && !win.isDestroyed()) {
       try {
-        win.setTitleBarOverlay(
-          dark
-            ? { color: '#202020', symbolColor: '#f2f2f2', height: 36 }
-            : { color: '#f3f3f3', symbolColor: '#1a1a1a', height: 36 }
-        )
+        win.setTitleBarOverlay({ color: '#00000000', symbolColor: dark ? '#f2f2f2' : '#1a1a1a', height: 36 })
       } catch {
         /* titleBarOverlay 未启用 */
       }
