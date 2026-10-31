@@ -39,6 +39,19 @@ src
 
 项目有迭代，以上简述可能已过期，请以 docs 目录内的实际文档为准。
 
+## 视觉设计（Fluent 2）
+
+界面视觉遵循 Fluent 2（Win11 设计语言），基准参考 files-community/Files 与 fluent2.microsoft.design。以下为设计法则，新界面与改动必须遵守：
+
+* 字体栈：`'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei'`——不引入打包字体。
+* 强调色：亮色 `#0067c0`，暗色 `#4cc2ff`（Win11 系统蓝系）；危险等语义色跟随 Fluent 语义。
+* 主题：亮 / 暗双主题，默认跟随系统（`prefers-color-scheme`），设置页可手动切换。所有颜色必须走 main.css 的主题令牌（`:root` 与暗色作用域），组件内禁止硬编码明暗色值。
+* 窗口：Win11 上启用 Mica 质感（`backgroundMaterial`）与 `titleBarOverlay` 自绘标题栏，Win10 自动回退系统标题栏——视觉改动必须验证降级形态。
+* 图标：界面装饰图标用 Fluent UI System Icons（MIT）或等价线性图标，禁止用 emoji 充当功能图标；目录/文件内容图标仍走系统图标缓存（getFileIcon，large 源）与 desktop.ini 自定义图标。
+* 列表：悬停 / 选中 / 聚焦三态齐备；加载用骨架屏（shimmer）而非纯文字提示。
+* 圆角基准：容器 8px、行内元素 4px；信息提示用彩边 info-bar 样式（着色背景 + 图标 + 动作）。
+* 暗色主题与 Mica 为既定方向、尚未实现——涉及视觉的改动应向该方向收敛，而不是引入偏离它的样式。
+
 ## 变更日志
 
 根目录 CHANGELOG.md 是面向用户的变更记录，发布时其对应版本段落会被 release 工作流提取为 GitHub Release 正文。
