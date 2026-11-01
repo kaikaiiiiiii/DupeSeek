@@ -1,12 +1,13 @@
 @echo off
 rem DupeSeek dev launcher: install deps if missing, then run electron-vite dev
+title DupeSeek dev
 cd /d "%~dp0"
 
 if not exist node_modules (
-  echo [run.bat] first run: installing dependencies...
+  echo [DupeSeek.bat] first run: installing dependencies...
   call npm install
   if errorlevel 1 (
-    echo [run.bat] npm install failed
+    echo [DupeSeek.bat] npm install failed
     pause
     exit /b 1
   )
