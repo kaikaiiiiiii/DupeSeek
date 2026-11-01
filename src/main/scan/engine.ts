@@ -818,7 +818,6 @@ export class ScanEngine {
     // node_modules：Everything 返回全量数据，直接按目录名收集前缀后从数组剔除
     const excluded: string[] = []
     const dirOk: string[] = []
-    console.log('[dbg] listVia dir =', target, '| pathStops =', JSON.stringify(this.excl.pathStops), '| names =', JSON.stringify([...this.excl.names]))
     // 设置中的路径排除：其子树文件/目录一律按前缀过滤
     for (const e of this.excl.pathStops) excluded.push(e)
     const nameHits: string[] = []
@@ -885,7 +884,6 @@ export class ScanEngine {
       }
       // reparse 文件（文件符号链接/云占位文件）：读取前者会穿越链接、
       // 读取后者会触发云端下载，均不符合本地查重的定位
-      console.log('[dbg] file =', f.filename, '| excluded =', isExcluded(f.filename), '| excludedArr =', JSON.stringify(excluded))
       if (isExcluded(f.filename) || (isReparse(f.filename) && skipReparse)) continue
       const name = path.basename(f.filename)
       if (settings.excludeHidden && name.startsWith('.')) continue
