@@ -10,6 +10,8 @@ export default defineConfig(
       '**/node_modules',
       '**/dist',
       '**/out',
+      // vendor/ 为第三方参考源码（Fluent UI Web Components 样式库），不参与 lint
+      'vendor/**',
       // tools/ 下的诊断探针为 CommonJS 脚本（electron 直跑），不走 lint 规则
       'tools/*.js',
       'tools/cleanDuplicateFiles.v2.js'

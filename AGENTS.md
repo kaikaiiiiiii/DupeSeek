@@ -51,6 +51,8 @@ src
 * 列表：悬停 / 选中 / 聚焦三态齐备；加载用骨架屏（shimmer）而非纯文字提示。
 * 圆角基准：容器 8px、行内元素 4px；信息提示用彩边 info-bar 样式（着色背景 + 图标 + 动作）。
 * 暗色主题与 Mica 为既定方向、尚未实现——涉及视觉的改动应向该方向收敛，而不是引入偏离它的样式。
+* 样式参考库：`vendor/fluentui-web-components/`（组件 CSS 与结构）与 `vendor/fluentui-tokens/`（设计 token 值，亮/暗主题在 `src/alias/`）是 Fluent UI Web Components v3 的源码快照，仅作阅读摘抄之用——禁止运行时 import，禁止修改；从其摘抄样式时在目标文件注释中注明出处（组件名 + token 名）。
+* 暗色主题与 Mica 为既定方向、尚未实现——涉及视觉的改动应向该方向收敛，而不是引入偏离它的样式。
 
 ## 变更日志
 
