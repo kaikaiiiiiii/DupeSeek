@@ -7,7 +7,7 @@
       (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
     if (window.api && window.api.mica) document.documentElement.classList.add('mica')
-  } catch (e) {
+  } catch {
     /* 主题探测失败按亮色渲染 */
   }
 })()

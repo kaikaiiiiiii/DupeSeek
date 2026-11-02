@@ -11,7 +11,9 @@ const content = new Map<string, MockContent>()
 let archiveMd5Calls = 0
 
 const digest = (kind: string, key: string): string =>
-  createHash('md5').update(kind + '|' + key).digest('hex')
+  createHash('md5')
+    .update(kind + '|' + key)
+    .digest('hex')
 
 export function setContent(path: string, c: MockContent): void {
   content.set(path.toLowerCase(), c)
@@ -37,12 +39,24 @@ function lookup(p: string): MockContent | undefined {
 }
 
 export const HASH_WORKERS = 4
-export function closeHashPool(): void {}
+export function closeHashPool(): void {
+  /* mock：无 worker 线程需释放 */
+}
 
-export function getHashPool() {
+export function getHashPool(): {
+  deniedCount: number
+  resetDenied(): void
+  md5Head(p: string): Promise<string | null>
+  md5Full(p: string): Promise<string | null>
+  archiveMd5(type: string, container: string, entry: string): Promise<string | null>
+  archiveList(): Promise<never[]>
+  rarExtract(): Promise<boolean>
+} {
   return {
     deniedCount: 0,
-    resetDenied(): void {},
+    resetDenied(): void {
+      /* mock：无 denied 计数 */
+    },
     async md5Head(p: string): Promise<string | null> {
       const c = lookup(p)
       return digest('head', c ? c.head : p)
@@ -51,11 +65,7 @@ export function getHashPool() {
       const c = lookup(p)
       return digest('full', c ? (c.full ?? c.head) : p)
     },
-    async archiveMd5(
-      _type: string,
-      container: string,
-      entry: string
-    ): Promise<string | null> {
+    async archiveMd5(_type: string, container: string, entry: string): Promise<string | null> {
       archiveMd5Calls++
       const c = lookup(container + '::' + entry)
       const key = c ? c.head : container + '::' + entry

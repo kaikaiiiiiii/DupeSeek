@@ -18,10 +18,10 @@
             </div>
             <div class="target-actions">
               <button class="icon-btn" title="在资源管理器中显示" @click="reveal(String(item))">
-                🔍
+                <AppIcon name="search" />
               </button>
               <button class="icon-btn danger" title="移除目标" @click="removeTarget(String(item))">
-                ✕
+                <AppIcon name="dismiss" />
               </button>
             </div>
             <!-- 独立扫描进度条：2px，扫完保持满格 -->
@@ -45,11 +45,21 @@
         class="clear-btn"
         title="清空列表"
         :disabled="targets.length === 0 || busy"
-        @click="clearAll"
+        @click="clearOpen = true"
       >
         <AppIcon name="trash" />
       </button>
     </div>
+
+    <ConfirmDialog
+      :open="clearOpen"
+      title="清空扫描目标"
+      message="确认清空全部扫描目标？仅从列表移除，不删除文件本身。"
+      confirm-text="清空"
+      danger
+      @confirm="onClearConfirm"
+      @cancel="clearOpen = false"
+    />
   </aside>
 </template>
 
@@ -59,6 +69,7 @@ import { useScanStore } from '../stores/scan'
 import { useTargetStore } from '../stores/target'
 import { baseName } from '../utils/format'
 import AppIcon from './AppIcon.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 import VirtualScrollList from './VirtualScrollList.vue'
 
 const targetStore = useTargetStore()
@@ -66,6 +77,7 @@ const scan = useScanStore()
 const targets = computed(() => targetStore.targets)
 const dragOver = ref(false)
 const busy = ref(false)
+const clearOpen = ref(false)
 
 async function addByDialog(): Promise<void> {
   busy.value = true
@@ -108,8 +120,9 @@ async function removeTarget(path: string): Promise<void> {
   await targetStore.remove(path)
 }
 
-async function clearAll(): Promise<void> {
-  if (window.confirm('确认清空全部扫描目标？')) await targetStore.clear()
+async function onClearConfirm(): Promise<void> {
+  clearOpen.value = false
+  await targetStore.clear()
 }
 
 async function reveal(path: string): Promise<void> {
@@ -124,7 +137,7 @@ async function reveal(path: string): Promise<void> {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--bg);
   overflow: hidden;
 }
@@ -243,10 +256,14 @@ async function reveal(path: string): Promise<void> {
   width: 30px;
   height: 30px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg);
   cursor: pointer;
   font-size: 14px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .clear-btn:hover:not(:disabled) {

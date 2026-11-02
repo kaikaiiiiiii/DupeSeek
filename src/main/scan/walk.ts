@@ -24,10 +24,7 @@ export function buildDirExclusions(settings: ScanSettings): DirExclusions {
     .map((s) => s.trim())
     .filter((s) => s !== '')
     .map((s) => {
-      const stripped = (process.platform === 'win32' ? s.toLowerCase() : s).replace(
-        /[\\/]+$/,
-        ''
-      )
+      const stripped = (process.platform === 'win32' ? s.toLowerCase() : s).replace(/[\\/]+$/, '')
       return /^[a-zA-Z]:$/.test(stripped) ? stripped + '\\' : stripped
     })
   return { names, pathStops }
@@ -115,17 +112,17 @@ export async function walkTargets(roots: string[], ctx: WalkContext): Promise<vo
 
   const visited = new Set<string>()
 
-    while (stack.length > 0) {
-      if (ctx.canceled()) return
-      const dir = stack.pop() as string
-      if (visited.has(dir)) continue
-      visited.add(dir)
-      // 目标根本身被排除（或名称命中）时：按空节点呈现，不枚举其内容
-      if (ctx.excl.names.has(path.basename(dir)) || isPathExcludedDir(dir, ctx.excl)) {
-        ctx.onExcludedDir(dir)
-        continue
-      }
-      ctx.onDir(dir)
+  while (stack.length > 0) {
+    if (ctx.canceled()) return
+    const dir = stack.pop() as string
+    if (visited.has(dir)) continue
+    visited.add(dir)
+    // 目标根本身被排除（或名称命中）时：按空节点呈现，不枚举其内容
+    if (ctx.excl.names.has(path.basename(dir)) || isPathExcludedDir(dir, ctx.excl)) {
+      ctx.onExcludedDir(dir)
+      continue
+    }
+    ctx.onDir(dir)
 
     let dirents: fs.Dirent[]
     try {

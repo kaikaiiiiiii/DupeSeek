@@ -33,7 +33,7 @@
               />
               <span class="inline-size">{{ view(item as TreeRow).sizeText }}</span>
               <span v-if="view(item as TreeRow).loading" class="dir-name"
-                ><span class="skeleton" style="width: 42%"></span
+                ><span class="skeleton skeleton-name"></span
               ></span>
               <span v-else class="dir-name" :title="view(item as TreeRow).fullPath">{{
                 view(item as TreeRow).name
@@ -109,7 +109,7 @@ function startResize(ev: MouseEvent, which: 'size' | 'dup'): void {
 interface RowView {
   loading: boolean
   depth: number
-  /** '>' 收起 / '∨' 展开 / '' 不可展开 */
+  /** '' 表示不可展开，不渲染 chevron */
   arrow: string
   iconKind: 'dir' | 'file' | 'aggregate'
   iconPath: string
@@ -345,6 +345,11 @@ function barStyle(item: TreeRow): Record<string, string> {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 加载骨架占位宽度 */
+.skeleton-name {
+  width: 42%;
 }
 
 .dir-size {

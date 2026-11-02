@@ -43,7 +43,7 @@ const treesize = useTreeSizeStore()
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--bg);
   overflow: hidden;
 }

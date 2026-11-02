@@ -1,5 +1,5 @@
 // 目录排除的回归用例：名称/路径双输入、空节点呈现、顶层收敛、目标自排除。
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 
 vi.mock('../src/main/scan/everything', async () => await import('./everything-mock'))
 vi.mock('../src/main/scan/hashPool', async () => await import('./hashpool-mock'))

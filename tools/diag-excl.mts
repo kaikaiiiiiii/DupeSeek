@@ -23,11 +23,21 @@ console.log(
   engine.dirs.size
 )
 // @ts-expect-error 诊断直通
-console.log('[internal] excludedDirs =', engine.excludedDirs.size, JSON.stringify([...engine.excludedDirs.keys()].slice(0, 5)))
+console.log(
+  '[internal] excludedDirs =',
+  engine.excludedDirs.size,
+  JSON.stringify([...engine.excludedDirs.keys()].slice(0, 5))
+)
 // @ts-expect-error 诊断直通
-console.log('[internal] dirs.get(dist) =', JSON.stringify(engine.dirs.get('D:\\Coding\\DupeSeek\\dist')))
+console.log(
+  '[internal] dirs.get(dist) =',
+  JSON.stringify(engine.dirs.get('D:\\Coding\\DupeSeek\\dist'))
+)
 // @ts-expect-error 诊断直通
-console.log('[internal] childDirs(big) =', JSON.stringify(engine.childDirs.get('D:\\Coding\\DupeSeek')?.slice(0, 15)))
+console.log(
+  '[internal] childDirs(big) =',
+  JSON.stringify(engine.childDirs.get('D:\\Coding\\DupeSeek')?.slice(0, 15))
+)
 
 // 场景 2：名称排除 dist 与 .git
 await engine.rescanAll({ ...base, excludeDirNames: 'dist, .git' })
@@ -51,7 +61,10 @@ await engine.rescanAll({
 })
 r = engine.treeRoots('size', true)
 // @ts-expect-error 诊断直通
-console.log('[目标即排除] childDirs(dist) =', JSON.stringify(engine.childDirs.get('D:\Coding\DupeSeek\dist')))
+console.log(
+  '[目标即排除] childDirs(dist) =',
+  JSON.stringify(engine.childDirs.get('D:\\Coding\\DupeSeek\\dist'))
+)
 // @ts-expect-error 诊断直通
 console.log('[目标即排除] excludedDirs =', JSON.stringify([...engine.excludedDirs]))
 console.log(

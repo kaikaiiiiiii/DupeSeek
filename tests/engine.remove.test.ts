@@ -1,11 +1,10 @@
 // 移除目标的回归用例：异步清理、重归属体量补记、删除反扣与剪枝、单文件目标。
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 
 vi.mock('../src/main/scan/everything', async () => await import('./everything-mock'))
 vi.mock('../src/main/scan/hashPool', async () => await import('./hashpool-mock'))
 
 import {
-  T,
   describeWin,
   mkEngine,
   mkSettings,
@@ -13,7 +12,6 @@ import {
   setFixtures,
   setContentFixtures,
   useWin32Platform,
-  whenSettled,
   type FileSpec
 } from './helpers'
 import type { ScanEngine } from '../src/main/scan/engine'
@@ -27,8 +25,16 @@ function innerOwnedFixtures(): void {
     { path: INNER + '\\h.txt', size: 700, head: 'K2', full: 'KF2' }
   ]
   setFixtures([
-    { target: INNER, dirs: [], files: [{ path: INNER + '\\h.txt', size: 700, head: 'K2', full: 'KF2' }] },
-    { target: DATA, dirs: [INNER], files: [{ path: DATA + '\\f.txt', size: 500, head: 'K1', full: 'KF1' }] }
+    {
+      target: INNER,
+      dirs: [],
+      files: [{ path: INNER + '\\h.txt', size: 700, head: 'K2', full: 'KF2' }]
+    },
+    {
+      target: DATA,
+      dirs: [INNER],
+      files: [{ path: DATA + '\\f.txt', size: 500, head: 'K1', full: 'KF1' }]
+    }
   ])
   setContentFixtures(files)
 }

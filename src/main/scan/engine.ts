@@ -856,16 +856,12 @@ export class ScanEngine {
     }
     // 名称命中先收敛（嵌套同名由顶层代表；位于路径排除之内的同样跳过）
     const nameTops = nameHits.filter(
-      (d) =>
-        !nameHits.some((o) => o !== d && inside(d, o)) &&
-        !pathHits.some((o) => inside(d, o))
+      (d) => !nameHits.some((o) => o !== d && inside(d, o)) && !pathHits.some((o) => inside(d, o))
     )
     for (const d of nameTops) this.registerExcludedDir(d, target)
     // 路径命中收敛：不被名称命中或其它路径命中包含的最顶层
     const pathTops = pathHits.filter(
-      (d) =>
-        !pathHits.some((o) => o !== d && inside(d, o)) &&
-        !nameTops.some((t) => inside(d, t))
+      (d) => !pathHits.some((o) => o !== d && inside(d, o)) && !nameTops.some((t) => inside(d, t))
     )
     for (const d of pathTops) this.registerExcludedDir(d, target)
     const isExcluded = (p: string): boolean => {

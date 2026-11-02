@@ -29,7 +29,7 @@ export const TEST_ROOT = path.join(os.tmpdir(), 'dupeseek-vitest')
 
 /** 相对路径 → 测试根下的 Windows 绝对路径（仅 win32 测试环境使用） */
 export function T(rel: string): string {
-  return path.join(TEST_ROOT, ...rel.split(/[\/]+/))
+  return path.join(TEST_ROOT, ...rel.split(/[/]+/))
 }
 
 export interface FileSpec {
@@ -88,7 +88,19 @@ export function resetAllFixtures(): void {
 }
 
 export function mkSettings(
-  overrides?: Partial<Pick<ScanSettings, 'targets' | 'excludeDirNames' | 'excludeDirPaths' | 'useEverything' | 'scanArchives' | 'excludeHidden' | 'excludeSystem' | 'excludeJunction'>>
+  overrides?: Partial<
+    Pick<
+      ScanSettings,
+      | 'targets'
+      | 'excludeDirNames'
+      | 'excludeDirPaths'
+      | 'useEverything'
+      | 'scanArchives'
+      | 'excludeHidden'
+      | 'excludeSystem'
+      | 'excludeJunction'
+    >
+  >
 ): ScanSettings {
   return { ...defaultScanDraft(), ...(overrides ?? {}) }
 }

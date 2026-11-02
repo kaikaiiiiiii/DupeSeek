@@ -7,24 +7,24 @@
       <aside class="app-left">
         <TargetList />
       </aside>
-    <div class="app-right">
-      <nav class="tab-bar">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          class="tab-btn"
-          :class="{ active: activeTab === tab.id }"
-          @click="activeTab = tab.id"
-        >
-          {{ tab.label }}
-        </button>
-      </nav>
-      <div class="tab-content">
-        <KeepAlive>
-          <component :is="current" />
-        </KeepAlive>
+      <div class="app-right">
+        <nav class="tab-bar">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            class="tab-btn"
+            :class="{ active: activeTab === tab.id }"
+            @click="activeTab = tab.id"
+          >
+            {{ tab.label }}
+          </button>
+        </nav>
+        <div class="tab-content">
+          <KeepAlive>
+            <component :is="current" />
+          </KeepAlive>
+        </div>
       </div>
-    </div>
     </div>
   </div>
 </template>
@@ -120,6 +120,7 @@ watch(
   width: 100%;
   display: flex;
   gap: 10px;
+  padding: 0 14px 14px; /* 面板离窗口左、右、底边缘留空，14px 与标题栏文字内边距对齐 */
 }
 
 .app-left {
@@ -143,7 +144,7 @@ watch(
 .tab-btn {
   padding: 8px 18px;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text);
   cursor: pointer;

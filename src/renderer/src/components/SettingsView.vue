@@ -112,7 +112,7 @@ function setScanArchives(v: boolean): void {
 
 .settings-card {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--bg);
   padding: 12px;
 }

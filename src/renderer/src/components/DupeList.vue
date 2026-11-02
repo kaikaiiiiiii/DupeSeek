@@ -41,9 +41,9 @@
             class="group-header"
             @click="toggleCollapse((item as HeaderRow).group.id)"
           >
-            <span class="disclosure">{{
-              collapsed.has((item as HeaderRow).group.id) ? '▸' : '▾'
-            }}</span>
+            <span class="disclosure" :class="{ exp: !collapsed.has((item as HeaderRow).group.id) }">
+              <AppIcon name="chevron" />
+            </span>
             <span class="group-title">{{
               baseName((item as HeaderRow).group.entries[0].path)
             }}</span>
@@ -67,13 +67,14 @@
             "
             @click="setKeep((item as EntryRow).group, (item as EntryRow).entry)"
           >
-            <span class="keep-mark">{{
-              (item as EntryRow).entry.containerPath !== null
-                ? '📦'
-                : isKept((item as EntryRow).group, (item as EntryRow).entry)
-                  ? '● 保留'
-                  : '○'
-            }}</span>
+            <span class="keep-mark">
+              <AppIcon v-if="(item as EntryRow).entry.containerPath !== null" name="box" />
+              <span
+                v-else
+                class="keep-dot"
+                :class="{ on: isKept((item as EntryRow).group, (item as EntryRow).entry) }"
+              ></span>
+            </span>
             <span class="entry-path" :title="(item as EntryRow).entry.path">{{
               (item as EntryRow).entry.path
             }}</span>
@@ -81,8 +82,18 @@
           </div>
         </template>
       </VirtualScrollList>
-      <div v-else class="empty">暂无重复文件，先到「扫描」页运行一次扫描</div>
+      <div v-else class="empty">暂无重复文件，先到「扫描参数」页运行一次扫描</div>
     </div>
+
+    <ConfirmDialog
+      :open="cleanOpen"
+      title="删除重复文件"
+      :message="`确认把 ${cleanCount} 个重复文件移入回收站？（每组保留 1 个原件）`"
+      confirm-text="删除"
+      danger
+      @confirm="onCleanConfirm"
+      @cancel="cleanOpen = false"
+    />
   </div>
 </template>
 
@@ -91,12 +102,16 @@ import { computed, ref, watch } from 'vue'
 import type { FileEntry } from '../../../shared/types'
 import { keepName, useDupeStore, type DupeGroupView, type KeepRule } from '../stores/dupe'
 import { baseName, formatBytes, formatTime } from '../utils/format'
+import AppIcon from './AppIcon.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 import VirtualScrollList from './VirtualScrollList.vue'
 
 const dupe = useDupeStore()
 const rule = ref<KeepRule>('first')
 const filterMB = ref<number | null>(null)
 const collapsed = ref<Set<number>>(new Set())
+const cleanOpen = ref(false)
+const cleanCount = ref(0)
 
 watch(filterMB, (v) => {
   dupe.filter.minSize = v !== null && v > 0 ? v * 1024 * 1024 : null
@@ -142,12 +157,16 @@ function toggleCollapse(groupId: number): void {
   collapsed.value = next
 }
 
-async function clean(): Promise<void> {
-  const count = dupe.visibleGroups.reduce(
+function clean(): void {
+  cleanCount.value = dupe.visibleGroups.reduce(
     (n, g) => n + g.entries.filter((e) => e.path !== dupe.keepChoice[g.id]).length,
     0
   )
-  if (!window.confirm(`确认把 ${count} 个重复文件移入回收站？（每组保留 1 个原件）`)) return
+  cleanOpen.value = true
+}
+
+async function onCleanConfirm(): Promise<void> {
+  cleanOpen.value = false
   await dupe.runClean()
 }
 </script>
@@ -159,7 +178,7 @@ async function clean(): Promise<void> {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--bg);
   overflow: hidden;
 }
@@ -216,6 +235,25 @@ async function clean(): Promise<void> {
   user-select: none;
 }
 
+.disclosure {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.disclosure svg {
+  width: 11px;
+  height: 11px;
+  transition: transform 0.12s ease;
+}
+
+.disclosure.exp svg {
+  transform: rotate(90deg);
+}
+
 .group-title {
   font-weight: 600;
   white-space: nowrap;
@@ -255,8 +293,31 @@ async function clean(): Promise<void> {
 }
 
 .keep-mark {
+  width: 16px;
   flex-shrink: 0;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.keep-mark svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* 保留标记：单选圆点，选中填充强调色 */
+.keep-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+  box-sizing: border-box;
+}
+
+.keep-dot.on {
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
 .entry-path {

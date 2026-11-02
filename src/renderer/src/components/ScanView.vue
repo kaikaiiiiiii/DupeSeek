@@ -94,7 +94,7 @@
           <span
             >{{ phaseLabel(scan.progress.phase) }} · {{ scan.progress.percent.toFixed(0) }}%</span
           >
-          <span class="elapsed" title="本次扫描已用时">⏱ {{ elapsedLabel }}</span>
+          <span class="elapsed">已用时 {{ elapsedLabel }}</span>
           <span
             >{{ scan.progress.filesFound }} 个候选 · 已哈希
             {{ formatBytes(scan.progress.bytesHashed) }}</span
@@ -269,7 +269,7 @@ async function startScan(): Promise<void> {
 .form-card,
 .run-card {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--bg);
   padding: 12px;
 }
@@ -319,9 +319,24 @@ async function startScan(): Promise<void> {
   margin-top: 10px;
 }
 
+/* Fluent 细进度条：中性轨道 + 强调色填充（Chromium progress 伪元素） */
 .bar {
+  appearance: none;
   width: 100%;
-  height: 14px;
+  height: 6px;
+  border: none;
+  border-radius: 3px;
+  background: var(--border-light);
+  overflow: hidden;
+}
+
+.bar::-webkit-progress-bar {
+  background: var(--border-light);
+}
+
+.bar::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 3px;
 }
 
 .progress-meta {
@@ -381,7 +396,7 @@ async function startScan(): Promise<void> {
 
 .summary.error {
   color: var(--danger);
-  background: none;
+  background: var(--danger-soft);
   border: 1px solid var(--danger);
 }
 </style>

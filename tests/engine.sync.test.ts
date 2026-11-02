@@ -1,5 +1,5 @@
 // 引擎同步与树服务回归用例：启动扫描、嵌套去重、盘根自指、规范化、树查询。
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 
 vi.mock('../src/main/scan/everything', async () => await import('./everything-mock'))
 vi.mock('../src/main/scan/hashPool', async () => await import('./hashpool-mock'))

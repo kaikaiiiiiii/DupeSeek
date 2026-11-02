@@ -19,6 +19,7 @@
   --size-bar: rgba(245, 194, 66, 0.5);
   --dup-bar: rgba(240, 98, 146, 0.45);
   --shadow: 0 8px 24px rgba(20, 40, 80, 0.12);
+  --scrim: rgba(0, 0, 0, 0.4);
   --radius: 8px;
 }
 
@@ -43,6 +44,7 @@
   --size-bar: rgba(245, 194, 66, 0.55);
   --dup-bar: rgba(240, 98, 146, 0.5);
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --scrim: rgba(0, 0, 0, 0.4);
   --radius: 8px;
 }
 
@@ -79,6 +81,12 @@ body {
 
 button {
   font: inherit;
+}
+
+/* 键盘焦点环：仅键盘导航时出现（鼠标点击不画环） */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 .btn {
