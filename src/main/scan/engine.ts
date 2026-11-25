@@ -4,8 +4,10 @@ import os from 'os'
 import path from 'path'
 import type {
   ArchiveType,
+  BranchStats,
   DupeGroup,
   FileEntry,
+  RefreshBranchReport,
   ScanProgress,
   ScanSettings,
   ScanSummary,
@@ -111,6 +113,79 @@ export function canonicalTarget(t: string): string {
   return /^[a-zA-Z]:$/.test(stripped) ? stripped + '\\' : stripped
 }
 
+/** 升序数组中第一个大于 x 的下标（二分；from 为搜索起点） */
+function bisectRight(arr: number[], x: number, from: number): number {
+  let lo = Math.max(0, from)
+  let hi = arr.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (arr[mid] <= x) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+/**
+ * 1D k-means（分位数种子 + Lloyd 迭代）：返回各组 { 中心, 成员数 }，按中心升序。
+ * 空簇以全局分位重播种；k 收敛为 min(k, 不同值档数)；中心重合的组就地合并。
+ * 有序数据 + 前缀和，一轮分配 O(k·log n)，几十万文件也在毫秒级。
+ */
+function kmeansBuckets(values: number[], k: number): Array<{ center: number; count: number }> {
+  if (values.length === 0) return []
+  const sorted = [...values].sort((a, b) => a - b)
+  const kk = Math.max(1, Math.min(k, new Set(sorted).size))
+  const quantile = (c: number): number => sorted[Math.floor(((c + 0.5) / kk) * (sorted.length - 1))]
+  const centers: number[] = []
+  for (let c = 0; c < kk; c++) centers.push(quantile(c))
+  const prefix = new Array<number>(sorted.length + 1)
+  prefix[0] = 0
+  for (let i = 0; i < sorted.length; i++) prefix[i + 1] = prefix[i] + sorted[i]
+
+  for (let iter = 0; iter < 24; iter++) {
+    const cnt = new Array<number>(kk).fill(0)
+    const sum = new Array<number>(kk).fill(0)
+    let start = 0
+    for (let c = 0; c < kk; c++) {
+      const end =
+        c === kk - 1
+          ? sorted.length
+          : Math.max(start, bisectRight(sorted, (centers[c] + centers[c + 1]) / 2, start))
+      cnt[c] = end - start
+      sum[c] = prefix[end] - prefix[start]
+      start = end
+    }
+    let moved = false
+    for (let c = 0; c < kk; c++) {
+      if (cnt[c] === 0) {
+        centers[c] = quantile(c)
+        moved = true
+        continue
+      }
+      const mean = sum[c] / cnt[c]
+      if (mean !== centers[c]) {
+        centers[c] = mean
+        moved = true
+      }
+    }
+    if (!moved) break
+  }
+
+  const bounds: number[] = []
+  for (let c = 0; c < kk - 1; c++) bounds.push((centers[c] + centers[c + 1]) / 2)
+  const counts = new Map<number, number>()
+  let start = 0
+  for (let c = 0; c < kk; c++) {
+    const end =
+      c === kk - 1 ? sorted.length : Math.max(start, bisectRight(sorted, bounds[c], start))
+    const n = end - start
+    if (n > 0) counts.set(centers[c], (counts.get(centers[c]) ?? 0) + n)
+    start = end
+  }
+  return [...counts.entries()]
+    .map(([center, count]) => ({ center: Math.round(center), count }))
+    .sort((a, b) => a.center - b.center)
+}
+
 /**
  * 有状态的增量扫描引擎。
  *
@@ -199,12 +274,11 @@ export class ScanEngine {
     }
   }
 
-  /** 目标列表同步：新增目标增量扫描，移除目标纯内存清理 */
+  /** 目标列表同步：新增目标增量扫描，移除目标纯内存清理；空目标列表 = 清空全部 */
   async syncTargets(settings: ScanSettings): Promise<ScanSummary> {
     if (this.running) throw new Error('已有扫描任务在进行中')
     // 目标规范化在后端统一做：尾斜杠/裸盘符变体不产生第二份会话
     const canon: ScanSettings = { ...settings, targets: settings.targets.map(canonicalTarget) }
-    if (canon.targets.length === 0) throw new Error('请先添加扫描目标')
     this.excl = buildDirExclusions(canon)
 
     const requested = new Set(canon.targets.map((t) => this.keyOf(t)))
@@ -299,6 +373,181 @@ export class ScanEngine {
     this.foundPerTarget.clear()
     this.processedPerTarget.clear()
     return this.syncTargets(settings)
+  }
+
+  /**
+   * 分支刷新（空间分析右键「更新该分支」）：用户可能在应用外手工增删了文件，
+   * 需要对单个子树重扫——不改变目标列表，只把该前缀的会话条目对齐磁盘现状。
+   * 按传入的当前扫描参数执行（可能与整盘当时的口径不同，docs/Cleanup.md）。
+   */
+  async refreshBranch(settings: ScanSettings, branchRaw: string): Promise<RefreshBranchReport> {
+    if (this.running) throw new Error('已有扫描任务在进行中')
+    const branch = canonicalTarget(branchRaw)
+    const stop = this.stopOf(branch)
+    // 分支必须落在某个已同步目标之内；取最深覆盖者作为新增条目的归属
+    let owner: string | null = null
+    for (const t of this.coveredTargets) {
+      const lt = this.stopOf(t)
+      if (
+        (stop === lt || stop.startsWith(lt + '\\')) &&
+        (owner === null || lt.length > this.stopOf(owner).length)
+      ) {
+        owner = t
+      }
+    }
+    if (owner === null) throw new Error('该路径不在任何已扫描目标范围内')
+    for (const dir of this.excludedDirs.keys()) {
+      const ld = this.stopOf(dir)
+      if (stop === ld || stop.startsWith(ld + '\\')) {
+        throw new Error('该位置位于排除目录内（呈现为空节点，无可刷新内容）')
+      }
+    }
+    // 在途移除清理分批让出，先等它收尾避免互踩
+    while (this.cleaningUp) await new Promise<void>((resolve) => setImmediate(resolve))
+
+    this.running = true
+    this.canceled = false
+    this.excl = buildDirExclusions(settings)
+    this.phase = 'listing'
+    this.progressTargets = [branch]
+    this.foundPerTarget.set(branch, 0)
+    this.processedPerTarget.set(branch, 0)
+    const lastPath = { value: '' }
+    try {
+      // —— 枚举现状（es -path 天然支持子树；不可用回退 fs walk）——
+      const added: FileEntry[] = []
+      const seen: FileEntry[] = []
+      const register = (e: FileEntry): boolean => {
+        if (!this.registerEntry(e, owner as string)) return false
+        added.push(e)
+        this.found++
+        return true
+      }
+      const registerSeen = (e: FileEntry): boolean => {
+        seen.push(e)
+        return register(e)
+      }
+      const ctx = {
+        settings,
+        excl: this.excl,
+        onExcludedDir: (p: string): void => {
+          this.registerExcludedDir(p, owner as string)
+        },
+        canceled: (): boolean => this.canceled,
+        onEntry: (e: FileEntry): void => {
+          if (!registerSeen(e)) return
+          this.emitProgress(e.path)
+          lastPath.value = e.path
+        },
+        onDir: (p: string): void => {
+          lastPath.value = p
+        },
+        onError: (_p: string, err: unknown): void => {
+          this.errors++
+          if (isPermissionError(err)) this.denied++
+        }
+      }
+
+      const lister = settings.useEverything ? await createEverythingLister() : null
+      let handled = false
+      if (lister) {
+        try {
+          handled = await this.listViaEverything(lister, branch, settings, registerSeen, lastPath)
+        } catch (err) {
+          console.warn(`[scan] 分支刷新枚举失败，回退 walk：${branch}`, err)
+        }
+      }
+      if (!handled) await walkTargets([branch], ctx)
+      if (settings.scanArchives) {
+        await this.listArchiveEntries(settings, added, register, lastPath)
+      }
+
+      // —— diff：消失 / 变化 / 新增 ——
+      const fresh = new Map<string, FileEntry>()
+      for (const e of seen) fresh.set(this.keyOf(e.path), e)
+      // 先求消失集（普通文件），包内条目跟随容器整链剔除
+      const vanished = new Set<string>()
+      for (const [key, e] of this.entries) {
+        if (e.containerPath !== null) continue
+        const lp = this.keyOf(e.path)
+        if ((lp === stop || lp.startsWith(stop + '\\')) && !fresh.has(lp)) vanished.add(key)
+      }
+      const deletedKeys = new Set<string>()
+      const touched: FileEntry[] = [...added]
+      const changedContainers: FileEntry[] = []
+      let removedCount = 0
+      let updatedCount = 0
+      for (const [key, e] of [...this.entries]) {
+        if (e.containerPath !== null) {
+          const ck = this.keyOf(e.containerPath)
+          if ((ck === stop || ck.startsWith(stop + '\\')) && vanished.has(ck)) {
+            this.entries.delete(key)
+            this.owners.delete(key)
+            deletedKeys.add(key)
+          }
+          continue
+        }
+        const lp = this.keyOf(e.path)
+        if (lp !== stop && !lp.startsWith(stop + '\\')) continue
+        const now = fresh.get(lp)
+        if (now === undefined) {
+          this.entries.delete(key)
+          this.owners.delete(key)
+          deletedKeys.add(key)
+          removedCount++
+          continue
+        }
+        if (now.size !== e.size || now.mtime !== e.mtime) {
+          e.size = now.size
+          e.mtime = now.mtime
+          e.headmd5 = null
+          e.fullmd5 = null
+          touched.push(e)
+          updatedCount++
+          if (archiveTypeOf(e.class) !== null) changedContainers.push(e)
+        }
+        fresh.delete(lp)
+      }
+      if (deletedKeys.size > 0) this.purgeGroupsByPaths(deletedKeys)
+      // 内容可能已变的容器：先剔除旧包内条目的组员资格再删条目重列
+      // （新条目路径可能与旧条目相同，组剔除必须先行，否则重列后被误剔）
+      if (settings.scanArchives && changedContainers.length > 0) {
+        const staleInner = new Set<string>()
+        for (const c of changedContainers) {
+          const ck = this.keyOf(c.path)
+          for (const [key, e] of this.entries) {
+            if (e.containerPath === null || this.keyOf(e.containerPath) !== ck) continue
+            staleInner.add(key)
+          }
+        }
+        this.purgeGroupsByPaths(staleInner)
+        for (const key of staleInner) {
+          this.entries.delete(key)
+          this.owners.delete(key)
+        }
+        await this.listArchiveEntries(settings, changedContainers, register, lastPath)
+      }
+
+      // —— 触碰桶重哈希 → 全量重算体积树（免增量残账）——
+      if (!this.canceled && touched.length > 0) {
+        this.phase = 'hashing'
+        this.processed = 0
+        this.bytesHashed = 0
+        this.foundPerTarget.set(branch, seen.length + added.length)
+        await this.hashTouched(settings, [], touched)
+      }
+      this.rebuildDirs()
+      return {
+        added: added.length,
+        removed: removedCount,
+        updated: updatedCount,
+        treeRev: this.treeRev
+      }
+    } finally {
+      this.running = false
+      this.canceled = false
+      this.broadcastRev()
+    }
   }
 
   /** 条目主键：Windows 路径大小写不敏感按小写归一，其余平台原样 */
@@ -646,8 +895,13 @@ export class ScanEngine {
    * 只比较「被新条目触碰」的 L0 桶：全量条目分桶后，取至少含一个新条目
    * 且成员 ≥ 2 的桶进入阶梯。现有条目哈希已记忆化，不重复读盘；
    * 产出的组为全量成员（含既有成员），渲染层按 key 幂等替换。
+   * extraTouched：分支刷新等场景中需重比对的既有条目（哈希已被调用方清空）。
    */
-  private async hashTouched(settings: ScanSettings, addList: string[]): Promise<void> {
+  private async hashTouched(
+    settings: ScanSettings,
+    addList: string[],
+    extraTouched: readonly FileEntry[] = []
+  ): Promise<void> {
     const touched = new Set<string>()
     const addSet = new Set(addList)
     // 触碰桶 = 新增目标所拥有条目的 L0 键（嵌套覆盖的既有条目不重触发哈希）
@@ -661,6 +915,7 @@ export class ScanEngine {
         await new Promise<void>((resolve) => setImmediate(resolve))
       }
     }
+    for (const e of extraTouched) touched.add(this.l0Key(e, settings))
 
     // 全量条目分桶，只保留被触碰的桶
     const buckets = new Map<string, FileEntry[]>()
@@ -1234,6 +1489,47 @@ export class ScanEngine {
       rev: this.treeRev,
       total: rows.length,
       rows: rows.slice(start, start + Math.max(1, limit))
+    }
+  }
+
+  /**
+   * 分支统计（右键菜单「统计数据」）：体积/数量口径与体积树显示一致
+   * （docs/Cleanup.md）。仅支持真实目录；大小分布做 1D k-means（≤10 组）。
+   */
+  treeStats(path: string): BranchStats | null {
+    if (path.includes('::')) return null // 压缩包合成目录不支持
+    const rec = this.dirs.get(path)
+    if (!rec) return null
+    const stop = this.keyOf(path)
+    const sizes: number[] = []
+    let fileCount = 0
+    let dirCount = 0
+    const visit = (dir: string): void => {
+      for (const f of this.dirFiles.get(dir) ?? []) {
+        sizes.push(f.size)
+        fileCount++
+      }
+      for (const c of this.childDirs.get(dir) ?? []) {
+        if (c.includes('::')) continue // 合成链不计目录数，包内条目下方按容器归并
+        dirCount++
+        visit(c)
+      }
+    }
+    visit(path)
+    for (const e of this.entries.values()) {
+      if (e.containerPath === null) continue
+      const ck = this.keyOf(e.containerPath)
+      if (ck === stop || ck.startsWith(stop + '\\')) {
+        sizes.push(e.size)
+        fileCount++
+      }
+    }
+    return {
+      totalSize: rec.size,
+      fileCount,
+      dirCount,
+      avgSize: fileCount > 0 ? rec.size / fileCount : 0,
+      histogram: kmeansBuckets(sizes, 10)
     }
   }
 

@@ -22,6 +22,8 @@ export const useScanStore = defineStore('scan', () => {
   const syncedTargets = ref<string[]>([])
   /** 扫描进行中发生的目标变化：本轮完成后自动补一轮增量同步 */
   const pendingSync = ref(false)
+  /** 分支刷新进行中（不改变扫描状态机，组事件放行） */
+  const refreshing = ref(false)
   const error = ref('')
 
   function initDraft(saved: ScanSettings): void {
@@ -46,7 +48,8 @@ export const useScanStore = defineStore('scan', () => {
     }
   })
   window.api.onScanGroup((p) => {
-    if (status.value !== 'scanning') return
+    // 分支刷新期间状态仍为 done，组事件放行（树经 scan:rev 跟随）
+    if (status.value !== 'scanning' && !refreshing.value) return
     adopt(p.sessionId)
     useDupeStore().appendGroups(p.groups)
   })
@@ -84,13 +87,15 @@ export const useScanStore = defineStore('scan', () => {
    * 移除目标纯内存清理（无磁盘 I/O）。现有条目的哈希记忆化全部保留。
    */
   async function syncTargets(): Promise<void> {
-    if (status.value === 'scanning') {
+    if (status.value === 'scanning' || refreshing.value) {
       // 不丢弃：记挂起标记，本轮扫描完成后自动补一轮增量同步
       pendingSync.value = true
       return
     }
     const targets = useTargetStore().targets
-    if (targets.length === 0) throw new Error('请先在左侧添加扫描目标')
+    // 清空目标 = 同步移除全部（引擎侧纯内存清理），sizeView 随 scan:rev 清空；
+    // 空会话无事可做（启动时目标为空不产生 0 汇总噪音）
+    if (targets.length === 0 && syncedTargets.value.length === 0) return
 
     // 移除目标的乐观内存清理（引擎侧同步做同样的清理）
     const removed = syncedTargets.value.filter((t) => !targets.includes(t))
@@ -121,6 +126,8 @@ export const useScanStore = defineStore('scan', () => {
       }
       status.value = 'done'
       if (summary.value) useTreeSizeStore().setRev(summary.value.treeRev)
+      // 清空目标后的全零汇总不展示，空状态由各视图自行呈现
+      if (targets.length === 0) summary.value = null
       maybePendingSync()
     } catch (err) {
       status.value = 'error'
@@ -132,7 +139,7 @@ export const useScanStore = defineStore('scan', () => {
 
   /** 整体重扫：清空引擎会话状态与全部结果后按当前目标全量扫描 */
   async function rescanAll(): Promise<void> {
-    if (status.value === 'scanning') return
+    if (status.value === 'scanning' || refreshing.value) return
     const targets = useTargetStore().targets
     if (targets.length === 0) throw new Error('请先在左侧添加扫描目标')
 
@@ -171,6 +178,22 @@ export const useScanStore = defineStore('scan', () => {
     if (sessionId.value) window.api.scanStop(sessionId.value)
   }
 
+  /**
+   * 分支刷新（空间分析右键「更新该分支」）：单独重遍历一个子树并与会话
+   * 比对，不改变目标列表。期间状态机保持 done，组事件放行、树随 scan:rev 跟随。
+   */
+  async function refreshBranch(path: string): Promise<void> {
+    if (status.value === 'scanning' || refreshing.value) throw new Error('已有扫描任务在进行中')
+    refreshing.value = true
+    try {
+      const report = await window.api.refreshBranch(deepPlain(draft.value), path)
+      useDupeStore().pruneUnderPath(path)
+      useTreeSizeStore().setRev(report.treeRev)
+    } finally {
+      refreshing.value = false
+    }
+  }
+
   return {
     draft,
     sessionId,
@@ -179,10 +202,13 @@ export const useScanStore = defineStore('scan', () => {
     summary,
     targetProgress,
     syncedTargets,
+    pendingSync,
+    refreshing,
     error,
     initDraft,
     syncTargets,
     rescanAll,
+    refreshBranch,
     stop
   }
 })

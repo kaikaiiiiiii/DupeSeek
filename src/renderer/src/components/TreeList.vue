@@ -22,6 +22,7 @@
               :class="{ branch: view(item as TreeRow).expandable }"
               :style="barStyle(item as TreeRow)"
               @click="onRowClick(item as TreeRow)"
+              @contextmenu="onRowContext($event, item as TreeRow)"
             >
               <span v-for="i in view(item as TreeRow).depth" :key="i" class="indent-gap"></span>
               <span class="disclosure" :class="{ exp: view(item as TreeRow).expandedRow }">
@@ -54,20 +55,36 @@
           : '左侧添加扫描目标后自动开始分析'
       }}
     </div>
+
+    <ContextMenu
+      :open="ctx.open"
+      :x="ctx.x"
+      :y="ctx.y"
+      :items="ctx.items"
+      @select="onCtxSelect"
+      @close="ctx.open = false"
+    />
+    <StatsPanel :open="statsOpen" :path="statsPath" @close="statsOpen = false" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useDupeStore } from '../stores/dupe'
 import { useScanStore } from '../stores/scan'
 import { useTreeSizeStore, type TreeRow } from '../stores/treesize'
+import { useUiStore } from '../stores/ui'
 import { formatBytes } from '../utils/format'
 import AppIcon from './AppIcon.vue'
+import ContextMenu from './ContextMenu.vue'
+import StatsPanel from './StatsPanel.vue'
 import VirtualScrollList from './VirtualScrollList.vue'
 import TreeIcon from './TreeIcon.vue'
 
 const treesize = useTreeSizeStore()
 const scan = useScanStore()
+const dupe = useDupeStore()
+const ui = useUiStore()
 
 /** 与 .indent-gap 宽度保持一致 */
 const INDENT = 16
@@ -198,6 +215,66 @@ function indicator(key: 'name' | 'size' | 'dup'): string {
 function onRowClick(item: TreeRow): void {
   if (item.kind === 'dir' && view(item).expandable) treesize.toggleRow(item)
   else if (item.kind === 'aggregate') treesize.toggleRow(item)
+}
+
+// —— 右键菜单（docs/Cleanup.md）：范围规则应用 / 分支刷新 / 打开 / 统计 ——
+
+interface CtxItem {
+  id: string
+  label: string
+  disabled?: boolean
+  danger?: boolean
+}
+
+const ctx = ref<{ open: boolean; x: number; y: number; items: CtxItem[] }>({
+  open: false,
+  x: 0,
+  y: 0,
+  items: []
+})
+const ctxPath = ref('')
+const ctxKind = ref<'dir' | 'file'>('dir')
+const statsOpen = ref(false)
+const statsPath = ref('')
+
+function onRowContext(ev: MouseEvent, item: TreeRow): void {
+  if (item.kind === 'loading' || item.kind === 'aggregate') return
+  ev.preventDefault()
+  const isDir = item.kind === 'dir'
+  const dup = isDir ? item.data.dupWasted : item.dupWasted
+  ctxPath.value = isDir ? item.data.path : item.path
+  ctxKind.value = isDir ? 'dir' : 'file'
+  const items: CtxItem[] = [
+    { id: 'clean', label: '清理该位置重复文件', disabled: dup === 0, danger: true }
+  ]
+  if (isDir) {
+    items.push({
+      id: 'refresh',
+      label: '更新该分支',
+      disabled: scan.status === 'scanning' || scan.refreshing
+    })
+  }
+  items.push({ id: 'open', label: '在资源管理器中打开' })
+  if (isDir) items.push({ id: 'stats', label: '统计数据' })
+  ctx.value = { open: true, x: ev.clientX, y: ev.clientY, items }
+}
+
+function onCtxSelect(id: string): void {
+  const p = ctxPath.value
+  if (id === 'clean') {
+    // 两段逻辑：应用以该目录为参数的范围规则，并切到清理规则页
+    dupe.applyScopeRule({ kind: 'underPath', path: p })
+    ui.setActiveTab('dupes')
+  } else if (id === 'refresh') {
+    useScanStore()
+      .refreshBranch(p)
+      .catch(() => {})
+  } else if (id === 'open') {
+    void window.api.openPath(p, ctxKind.value)
+  } else if (id === 'stats') {
+    statsPath.value = p
+    statsOpen.value = true
+  }
 }
 
 /** 体积条：左缘对齐所在层级缩进；100% 基准 = 全局最大体积（名称列内可用宽度，

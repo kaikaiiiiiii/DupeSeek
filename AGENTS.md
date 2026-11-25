@@ -28,6 +28,7 @@ src
 * Explorer.md — 文件系统浏览器组件
 * Scan.md — 重复文件扫描设置组件
 * DupeList.md — 重复文件列表与管理组件
+* Cleanup.md — 清理范围规则与分支操作（右键菜单 / refreshBranch / 统计口径）
 * TreeSize.md — 空间分析可视化组件
 * Tabs.md — 标签页切换逻辑
 * Settings.md — 全局应用设置组件

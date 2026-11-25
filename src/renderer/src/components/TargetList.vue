@@ -9,27 +9,34 @@
     <div class="hint">{{ dragOver ? '松开以添加目标' : '拖入文件或目录，或点击下方按钮添加' }}</div>
 
     <div class="list-area">
-      <VirtualScrollList v-if="targets.length > 0" :items="targets" :item-size="64">
+      <VirtualScrollList v-if="targets.length > 0" :items="targets" :item-size="70">
         <template #default="{ item }">
-          <div class="target-item">
-            <div class="target-info">
-              <div class="target-name" :title="String(item)">{{ baseName(String(item)) }}</div>
-              <div class="target-path" :title="String(item)">{{ item }}</div>
-            </div>
-            <div class="target-actions">
-              <button class="icon-btn" title="在资源管理器中显示" @click="reveal(String(item))">
-                <AppIcon name="search" />
-              </button>
-              <button class="icon-btn danger" title="移除目标" @click="removeTarget(String(item))">
-                <AppIcon name="dismiss" />
-              </button>
-            </div>
-            <!-- 独立扫描进度条：2px，扫完保持满格 -->
-            <div class="target-progress-track">
-              <div
-                class="target-progress-fill"
-                :style="{ width: (scan.targetProgress[String(item)] ?? 0) + '%' }"
-              ></div>
+          <!-- 70px 定高格子承载面板间隙（间隙走 padding 而非 margin，虚拟滚动按格子测量不漂移） -->
+          <div class="target-cell">
+            <div class="target-panel">
+              <div class="target-info">
+                <div class="target-name" :title="String(item)">{{ baseName(String(item)) }}</div>
+                <div class="target-path" :title="String(item)">{{ item }}</div>
+              </div>
+              <div class="target-actions">
+                <button class="icon-btn" title="在资源管理器中显示" @click="reveal(String(item))">
+                  <AppIcon name="search" />
+                </button>
+                <button
+                  class="icon-btn danger"
+                  title="移除目标"
+                  @click="removeTarget(String(item))"
+                >
+                  <AppIcon name="dismiss" />
+                </button>
+              </div>
+              <!-- 独立扫描进度条：3px 圆角短 pill，扫完保持满格 -->
+              <div class="target-progress-track">
+                <div
+                  class="target-progress-fill"
+                  :style="{ width: (scan.targetProgress[String(item)] ?? 0) + '%' }"
+                ></div>
+              </div>
             </div>
           </div>
         </template>
@@ -131,31 +138,55 @@ async function reveal(path: string): Promise<void> {
 </script>
 
 <style scoped>
+/* 开放式窗格（Fluent 导航窗格形态）：无卡片边框，右侧竖向分隔线与右侧
+ * 内容区分隔，提示文字自带下横线 */
 .target-list {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  overflow: hidden;
+  border-right: 1px solid var(--border);
 }
 
 .target-list.droppable {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-soft);
+  border-right-color: var(--accent);
 }
 
 .hint {
   padding: 8px 10px;
   color: var(--muted);
-  border-bottom: 1px solid var(--border);
 }
 
 .list-area {
   flex: 1;
   min-height: 0;
+  padding-top: 6px; /* 首个面板与提示条之间的空隙 */
+}
+
+/* 70px 定高格子：外层 padding 承载面板间隙（间隙与 list 边框保持空隙） */
+.target-cell {
+  height: 70px;
+  padding: 0 6px 6px;
+  box-sizing: border-box;
+}
+
+/* 目标面板（Fluent 卡片条目）：纯白底，悬停象牙白 */
+.target-panel {
+  position: relative;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border-radius: 4px;
+  box-sizing: border-box;
+  transition: background-color 0.12s ease;
+}
+
+.target-panel:hover {
+  background: var(--surface-hover);
 }
 
 .empty {
@@ -163,29 +194,20 @@ async function reveal(path: string): Promise<void> {
   color: var(--muted);
 }
 
-.target-item {
-  position: relative;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border-light);
-  box-sizing: border-box;
-}
-
-/* 条目底部独立扫描进度条：高 2px，扫完保持满格 */
+/* 面板底部独立进度条：3px 圆角短 pill，两侧留空不入圆角 */
 .target-progress-track {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
+  left: 10px;
+  right: 10px;
+  bottom: 5px;
+  height: 3px;
+  border-radius: 2px;
   background: var(--border-light);
 }
 
 .target-progress-fill {
   height: 100%;
+  border-radius: 2px;
   background: var(--accent);
   transition: width 0.2s ease;
 }
@@ -216,7 +238,7 @@ async function reveal(path: string): Promise<void> {
   gap: 4px;
 }
 
-.target-item:hover .target-actions {
+.target-panel:hover .target-actions {
   display: flex;
 }
 

@@ -34,9 +34,17 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   })
 
   ipcMain.handle('fs:reveal', (_e, p: string) => shell.showItemInFolder(p))
+  // 右键菜单「在资源管理器中打开」：目录交给系统打开，文件定位到所在文件夹
+  ipcMain.handle('fs:open-path', async (_e, p: string, kind: 'dir' | 'file') => {
+    if (kind === 'dir') await shell.openPath(p)
+    else shell.showItemInFolder(p)
+  })
 
   ipcMain.handle('scan:sync', async (_e, settings: ScanSettings) => engine.syncTargets(settings))
   ipcMain.handle('scan:rescan', async (_e, settings: ScanSettings) => engine.rescanAll(settings))
+  ipcMain.handle('scan:refresh-branch', (_e, settings: ScanSettings, path: string) =>
+    engine.refreshBranch(settings, path)
+  )
   ipcMain.on('scan:stop', () => engine.stop())
 
   ipcMain.handle('clean:run', (_e, action: CleanAction) => runClean(action))
@@ -72,4 +80,5 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     (_e, dir: string, sortKey: TreeSortKey, desc: boolean, offset: number, limit: number) =>
       engine.treeFiles(dir, sortKey, desc, offset, limit)
   )
+  ipcMain.handle('tree:stats', (_e, path: string) => engine.treeStats(path))
 }

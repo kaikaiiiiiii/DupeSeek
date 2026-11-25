@@ -2,6 +2,8 @@
   color-scheme: light;
   --bg: #f3f3f3;
   --surface: #ffffff;
+  /* 面板悬停态：象牙白（目标列表等卡片条目用） */
+  --surface-hover: #fffff0;
   --surface-alt: #f9f9fb;
   --hover-bg: #eceef3;
   --border: #d0d3d9;
@@ -27,6 +29,8 @@
   color-scheme: dark;
   --bg: #202020;
   --surface: #2b2b2b;
+  /* 暗色等价：面板悬停比表面略亮 */
+  --surface-hover: #333333;
   --surface-alt: #272729;
   --hover-bg: #2e3440;
   --border: #3f3f46;

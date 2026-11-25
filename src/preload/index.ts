@@ -22,10 +22,13 @@ const api: DupeSeekApi = {
   mica: process.env['DUPESEEK_MICA'] === '1',
   selectTargets: (kind) => ipcRenderer.invoke('dialog:select-targets', kind),
   reveal: (path) => ipcRenderer.invoke('fs:reveal', path),
+  openPath: (path, kind) => ipcRenderer.invoke('fs:open-path', path, kind),
   pathForFile: (file) => webUtils.getPathForFile(file),
   setOverlayTheme: (dark) => ipcRenderer.invoke('app:overlay-theme', dark),
   scanSync: (settings) => ipcRenderer.invoke('scan:sync', plainJson(settings)),
   scanRescan: (settings) => ipcRenderer.invoke('scan:rescan', plainJson(settings)),
+  refreshBranch: (settings, path) =>
+    ipcRenderer.invoke('scan:refresh-branch', plainJson(settings), path),
   scanStop: (sessionId) => ipcRenderer.send('scan:stop', sessionId),
   cleanRun: (action) => ipcRenderer.invoke('clean:run', plainJson(action)),
   elevate: () => ipcRenderer.invoke('app:elevate'),
@@ -37,6 +40,7 @@ const api: DupeSeekApi = {
   treeChildren: (dir, sortKey, desc) => ipcRenderer.invoke('tree:children', dir, sortKey, desc),
   treeFiles: (dir, sortKey, desc, offset, limit) =>
     ipcRenderer.invoke('tree:files', dir, sortKey, desc, offset, limit),
+  treeStats: (path) => ipcRenderer.invoke('tree:stats', path),
 
   onScanProgress: subscribe('scan:progress'),
   onTreeRev: subscribe('scan:rev'),

@@ -13,8 +13,8 @@
             v-for="tab in tabs"
             :key="tab.id"
             class="tab-btn"
-            :class="{ active: activeTab === tab.id }"
-            @click="activeTab = tab.id"
+            :class="{ active: ui.activeTab === tab.id }"
+            @click="ui.setActiveTab(tab.id)"
           >
             {{ tab.label }}
           </button>
@@ -30,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { initTheme } from './utils/theme'
 import DupeList from './components/DupeList.vue'
 import ScanView from './components/ScanView.vue'
@@ -41,6 +41,7 @@ import { useDupeStore } from './stores/dupe'
 import { useScanStore } from './stores/scan'
 import { useSettingsStore } from './stores/settings'
 import { useTargetStore } from './stores/target'
+import { useUiStore } from './stores/ui'
 
 const tabs = [
   { id: 'treesize', label: '空间分析', component: TreeSizeView },
@@ -49,12 +50,8 @@ const tabs = [
   { id: 'settings', label: '软件设置', component: SettingsView }
 ] as const
 
-type TabId = (typeof tabs)[number]['id']
-
-const activeTab = ref<TabId>('treesize')
-const current = computed(
-  () => tabs.find((t) => t.id === activeTab.value)?.component ?? TreeSizeView
-)
+const ui = useUiStore()
+const current = computed(() => tabs.find((t) => t.id === ui.activeTab)?.component ?? TreeSizeView)
 
 const isWin = window.api.platform === 'win32'
 

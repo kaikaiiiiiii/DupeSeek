@@ -11,7 +11,20 @@
         <option value="shortestPath">每组保留路径最短的</option>
       </select>
       <button class="btn" @click="dupe.applyKeepRule(rule as KeepRule)">应用选择器</button>
-      <button class="btn danger" :disabled="!canClean" @click="clean">删除所选（进回收站）</button>
+      <button class="btn danger" :disabled="dupe.checkedCount === 0" @click="clean">
+        删除勾选（进回收站）
+      </button>
+    </div>
+
+    <!-- 范围规则激活时的提示条（右键菜单「清理该位置重复文件」应用） -->
+    <div v-if="dupe.scopeRule !== null" class="scope-bar">
+      <AppIcon class="scope-icon" name="search" />
+      <span class="scope-text">
+        范围规则：仅勾选 <b>{{ scopePath }}</b> 下的文件（{{ dupe.checkedCount }} 项）
+      </span>
+      <button class="scope-clear" title="清除范围规则" @click="dupe.clearScopeRule()">
+        <AppIcon name="dismiss" />
+      </button>
     </div>
 
     <div class="filter-row">
@@ -51,29 +64,34 @@
               >{{ (item as HeaderRow).group.entries.length }} 个文件 ·
               {{ formatBytes((item as HeaderRow).group.size) }}</span
             >
-            <span class="group-keep">保留：{{ keepDisplay((item as HeaderRow).group) }}</span>
+            <span class="group-keep"
+              >勾选 {{ checkedIn((item as HeaderRow).group) }} /
+              {{ normalCount((item as HeaderRow).group) }}</span
+            >
           </div>
           <div
             v-else
             class="entry-row"
             :class="{
-              kept: isKept((item as EntryRow).group, (item as EntryRow).entry),
+              checked: dupe.isChecked((item as EntryRow).entry.path),
               readonly: (item as EntryRow).entry.containerPath !== null
             }"
             :title="
               (item as EntryRow).entry.containerPath !== null
                 ? '压缩包内条目仅参与查重，不参与清理'
-                : '点击设为保留项'
+                : '点击切换勾选（勾选 = 待清理）'
             "
-            @click="setKeep((item as EntryRow).group, (item as EntryRow).entry)"
+            @click="toggle((item as EntryRow).entry)"
           >
             <span class="keep-mark">
               <AppIcon v-if="(item as EntryRow).entry.containerPath !== null" name="box" />
               <span
                 v-else
-                class="keep-dot"
-                :class="{ on: isKept((item as EntryRow).group, (item as EntryRow).entry) }"
-              ></span>
+                class="check-box"
+                :class="{ on: dupe.isChecked((item as EntryRow).entry.path) }"
+              >
+                <AppIcon v-if="dupe.isChecked((item as EntryRow).entry.path)" name="check" />
+              </span>
             </span>
             <span class="entry-path" :title="(item as EntryRow).entry.path">{{
               (item as EntryRow).entry.path
@@ -88,7 +106,7 @@
     <ConfirmDialog
       :open="cleanOpen"
       title="删除重复文件"
-      :message="`确认把 ${cleanCount} 个重复文件移入回收站？（每组保留 1 个原件）`"
+      :message="confirmMessage"
       confirm-text="删除"
       danger
       @confirm="onCleanConfirm"
@@ -100,7 +118,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { FileEntry } from '../../../shared/types'
-import { keepName, useDupeStore, type DupeGroupView, type KeepRule } from '../stores/dupe'
+import { useDupeStore, type DupeGroupView, type KeepRule } from '../stores/dupe'
 import { baseName, formatBytes, formatTime } from '../utils/format'
 import AppIcon from './AppIcon.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -111,7 +129,7 @@ const rule = ref<KeepRule>('first')
 const filterMB = ref<number | null>(null)
 const collapsed = ref<Set<number>>(new Set())
 const cleanOpen = ref(false)
-const cleanCount = ref(0)
+const plan = ref<{ remove: number; skipped: number }>({ remove: 0, skipped: 0 })
 
 watch(filterMB, (v) => {
   dupe.filter.minSize = v !== null && v > 0 ? v * 1024 * 1024 : null
@@ -132,22 +150,33 @@ const rows = computed<Row[]>(() => {
   return list
 })
 
-const canClean = computed(
-  () => dupe.visibleGroups.length > 0 && dupe.visibleGroups.every((g) => dupe.keepChoice[g.id])
+const scopePath = computed(() =>
+  dupe.scopeRule !== null && dupe.scopeRule.kind === 'underPath' ? dupe.scopeRule.path : ''
 )
 
-function isKept(group: DupeGroupView, entry: FileEntry): boolean {
-  return dupe.keepChoice[group.id] === entry.path
+const confirmMessage = computed(() => {
+  const base = `确认把 ${plan.value.remove} 个勾选文件移入回收站？`
+  return plan.value.skipped > 0
+    ? `${base}（另有 ${plan.value.skipped} 组将整组跳过：全部副本都在勾选范围内，删光会丢失文件）`
+    : base
+})
+
+function normalEntries(g: DupeGroupView): FileEntry[] {
+  return g.entries.filter((e) => e.containerPath === null)
 }
 
-/** 压缩包内条目不可作为保留件（无法被清理动作触碰） */
-function setKeep(group: DupeGroupView, entry: FileEntry): void {
+function normalCount(g: DupeGroupView): number {
+  return normalEntries(g).length
+}
+
+function checkedIn(g: DupeGroupView): number {
+  return normalEntries(g).filter((e) => dupe.isChecked(e.path)).length
+}
+
+/** 压缩包内条目不可勾选（无法被清理动作触碰） */
+function toggle(entry: FileEntry): void {
   if (entry.containerPath !== null) return
-  dupe.setKeep(group.id, entry.path)
-}
-
-function keepDisplay(group: DupeGroupView): string {
-  return keepName(group, dupe.keepChoice[group.id])
+  dupe.toggleChecked(entry.path)
 }
 
 function toggleCollapse(groupId: number): void {
@@ -158,10 +187,8 @@ function toggleCollapse(groupId: number): void {
 }
 
 function clean(): void {
-  cleanCount.value = dupe.visibleGroups.reduce(
-    (n, g) => n + g.entries.filter((e) => e.path !== dupe.keepChoice[g.id]).length,
-    0
-  )
+  const p = dupe.planClean()
+  plan.value = { remove: p.removePaths.length, skipped: p.skippedGroups }
   cleanOpen.value = true
 }
 
@@ -194,6 +221,44 @@ async function onCleanConfirm(): Promise<void> {
 .stat {
   flex: 1;
   color: var(--muted);
+}
+
+/* 范围规则提示条：彩边 info-bar 样式 */
+.scope-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--info-bg);
+  border-bottom: 1px solid var(--info-bd);
+}
+
+.scope-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.scope-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scope-clear {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.scope-clear:hover {
+  background: var(--hover-bg);
+  color: var(--text);
 }
 
 .filter-row {
@@ -271,6 +336,7 @@ async function onCleanConfirm(): Promise<void> {
   color: var(--accent);
   font-size: 12px;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .entry-row {
@@ -288,8 +354,9 @@ async function onCleanConfirm(): Promise<void> {
   background: var(--hover-bg);
 }
 
-.entry-row.kept {
-  color: var(--accent);
+/* 勾选行 = 待清理，危险色提示 */
+.entry-row.checked {
+  color: var(--danger);
 }
 
 .keep-mark {
@@ -306,18 +373,27 @@ async function onCleanConfirm(): Promise<void> {
   height: 13px;
 }
 
-/* 保留标记：单选圆点，选中填充强调色 */
-.keep-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 1.5px solid var(--muted);
+/* 勾选框：方形复选，选中填充强调色并打勾 */
+.check-box {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-fg);
   box-sizing: border-box;
 }
 
-.keep-dot.on {
-  border-color: var(--accent);
+.check-box.on {
   background: var(--accent);
+  border-color: var(--accent);
+}
+
+.check-box svg {
+  width: 10px;
+  height: 10px;
 }
 
 .entry-path {

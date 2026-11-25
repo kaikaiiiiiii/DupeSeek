@@ -137,6 +137,33 @@ export interface TreeFilesReply {
   rows: TreeFileRowData[]
 }
 
+/** 清理范围规则：只选择该目录路径下的文件（含子目录）；见 docs/Cleanup.md */
+export interface ScopeUnderPathRule {
+  kind: 'underPath'
+  /** 目录绝对路径；勾选集 = 该路径下的全部普通文件（压缩包内条目永不入选） */
+  path: string
+}
+
+export type ScopeRule = ScopeUnderPathRule
+
+/** 分支统计数据（tree:stats），口径见 docs/Cleanup.md */
+export interface BranchStats {
+  totalSize: number
+  fileCount: number
+  dirCount: number
+  avgSize: number
+  /** 1D k-means 大小分布：center 为组内大小均值（字节），按 center 升序 */
+  histogram: Array<{ center: number; count: number }>
+}
+
+/** 分支刷新报告（scan:refresh-branch） */
+export interface RefreshBranchReport {
+  added: number
+  removed: number
+  updated: number
+  treeRev: number
+}
+
 export interface DupeGroup {
   key: string
   size: number
@@ -210,6 +237,12 @@ export interface DupeSeekApi {
     offset: number,
     limit: number
   ): Promise<TreeFilesReply | null>
+  /** 分支统计数据（右键菜单「统计数据」）；路径不在树中返回 null */
+  treeStats(path: string): Promise<BranchStats | null>
+  /** 打开路径：目录交给系统打开；文件定位到所在文件夹 */
+  openPath(path: string, kind: 'dir' | 'file'): Promise<void>
+  /** 单独重遍历某子树并与会话比对（不改变目标列表）；按当前扫描参数执行 */
+  refreshBranch(settings: ScanSettings, path: string): Promise<RefreshBranchReport>
 
   onScanProgress(cb: (p: ScanProgress) => void): () => void
   /** 体积树版本广播（移除目标等不伴随 progress 的变更） */

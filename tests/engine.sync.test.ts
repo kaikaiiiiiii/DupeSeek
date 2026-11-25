@@ -176,4 +176,17 @@ describeWin('同步与树服务', () => {
     const roots = engine.treeRoots('size', true)
     expect(roots.dirs.map((d) => d.path).sort()).toEqual([T('data'), inner].sort())
   })
+
+  it('回归：清空全部目标——条目、组、树全部收敛为空（空目标列表 = 移除全部）', async () => {
+    engine = await mkEngine()
+    baseFixtures()
+    await engine.syncTargets(mkSettings({ targets: [PROJ] }))
+    expect(engine.diag().entries).toBe(8)
+
+    const summary = await engine.syncTargets(mkSettings({ targets: [] }))
+    expect(summary.filesFound).toBe(0)
+    expect(engine.diag().entries).toBe(0)
+    expect(engine.diagGroups()).toHaveLength(0)
+    expect(engine.treeRoots('size', true).dirs).toHaveLength(0)
+  })
 })
