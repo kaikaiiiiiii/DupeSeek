@@ -2,7 +2,7 @@
 
 > v0.4（2026-11-26）。类型引用见 [DataModel.md](./DataModel.md)，通道定义见 [IPC.md](./IPC.md)。实现在 `src/renderer/src/stores/`。
 >
-> 原则：组件之间不直接传数据，一律通过 store；渲染层不持有文件系统的「私有副本」，体积树与重复组的权威数据在主进程。大列表渲染交给虚拟滚动（virtua VList，封装见 `components/VirtualScrollList.vue`）。事件订阅在 store 模块加载时注册一次（应用单页常驻，不做卸载清理）。
+> 原则：组件之间不直接传数据，一律通过 store；渲染层不持有文件系统的「私有副本」，体积树与重复组的权威数据在主进程。大列表渲染交给虚拟滚动（virtua VList，封装见 `components/VirtualScrollList.vue`）。事件订阅在 store **首次实例化**（首次 `useXxxStore()`）时注册一次（应用单页常驻，不做卸载清理）。
 
 ## 1. Store 一览
 
@@ -60,7 +60,7 @@ actions: ensureChildren(dir, force?)、ensureFiles(dir, force?)、refresh()、
          setRev(v)、setSort(key)、toggleRow(row)、reset()、expandAll()、collapseAll()
 ```
 
-- 拉取式：前端不持有全量树，只在展开时请求 `tree:roots` / `tree:children` / `tree:files`，只缓存已展开范围（内存 O(已展开)）。
+- 拉取式：前端不持有全量树，只在展开时请求 `tree:roots` / `tree:children` / `tree:files`，缓存**曾展开过**的路径（内存 O(曾展开)；`reset()`/`collapseAll()` 不释放缓存，见 TreeSize.md「已知限制」）。
 - `setRev` 做 400ms 尾沿节流：rev 变化后只重取已展开路径，旧数据保留显示（stale-while-revalidate，避免哈希期闪烁）。
 - 响应 `rev < 当前 rev` 视为过期丢弃；展开状态按「位置 ID」记键（同一路径作为嵌套目标根行与父级子行时是两个独立 UI 条目，数据缓存仍按路径共享）。
 - 订阅：`scan.progress.treeRev` 变化（仅扫描中）与 `onTreeRev` 广播（移除目标/分支刷新等）都汇入 `setRev`。初始化时立即拉取根级。
@@ -84,7 +84,7 @@ state: {
 actions: initDraft(saved)、syncTargets()、rescanAll()、refreshBranch(path)、stop()
 ```
 
-- **事件订阅（模块加载时注册）**：
+- **事件订阅（store 首次实例化时注册）**：
   - `onScanProgress`：仅 `status === 'scanning'` 消费，更新 `progress` 与 `targetProgress`；
   - `onScanGroup`：`status === 'scanning' || refreshing` 时 `dupe.appendGroups(groups)`；
   - `onScanDone`：仅扫描中消费，落 `summary`、`status = 'done'`、`syncedTargets` 对齐、完成目标进度置 100、`treesize.setRev(summary.treeRev)`；

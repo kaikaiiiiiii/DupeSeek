@@ -8,7 +8,7 @@
 
 - Channel 命名：`域:动作`（如 `scan:start` → 实际为 `scan:sync`/`scan:rescan`）。
 - 请求/响应使用 `ipcMain.handle` + `ipcRenderer.invoke`；成功返回数据，失败 reject `Error`（message 为中文可读原因）。渲染层统一 catch：扫描相关错误写入 `useScanStore.error` 并在扫描页展示。
-- 主进程主动推送使用 `webContents.send`，preload 封装为 `on*` 订阅函数并返回取消订阅的 cleanup 函数。**实际用法**：各 store 在模块加载时注册一次订阅、运行期不取消（应用单页常驻，无卸载场景）。
+- 主进程主动推送使用 `webContents.send`，preload 封装为 `on*` 订阅函数并返回取消订阅的 cleanup 函数。**实际用法**：各 store 在首次实例化时注册一次订阅、运行期不取消（应用单页常驻，无卸载场景）。
 - 参数经 preload 的统一 `plainJson()` 拍平（Vue 响应式 Proxy 不能直接过 contextBridge）。
 - payload 类型全部定义在 `src/shared/types.ts`，preload 类型声明在 `src/preload/index.d.ts`。
 

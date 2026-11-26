@@ -20,7 +20,7 @@
 
 ## 空间分析与体积树
 
-- 体积树的权威数据在主进程（全局条集聚合 + dirs/childDirs/dirFiles 索引）；前端不持有全量树、不做计算，只发四类查询：`tree:roots` / `tree:children(dir)` / `tree:files(dir, offset, limit)` / `tree:stats(path)`，排序键与方向作为参数由后端执行。前端只缓存**已展开范围**，GUI 侧内存从 O(全盘) 降为 O(已展开)。
+- 体积树的权威数据在主进程（全局条集聚合 + dirs/childDirs/dirFiles 索引）；前端不持有全量树、不做计算，只发四类查询：`tree:roots` / `tree:children(dir)` / `tree:files(dir, offset, limit)` / `tree:stats(path)`，排序键与方向作为参数由后端执行。前端只缓存**曾展开过**的路径，GUI 侧内存从 O(全盘) 降为 O(曾展开)（折叠/重扫不释放缓存，见 [TreeSize.md](./TreeSize.md)「已知限制」）。
 - `scan:progress` 不捎带树数据，只携带 `treeRev` 版本号；另有一条独立的 `scan:rev` 广播用于移除目标、分支刷新等不伴随 progress 的变更。前端按版本失效缓存、仅重取已展开路径，400ms 尾沿节流。
 - 体积口径：文件体积沿祖先链累加到目标根；重复占用按「每组保留 mtime 最早的一份，其余副本体积计入各自目录链」归集。压缩包内容在树中呈现为 `容器路径::` 合成目录链，包内条目体积只累加到合成根、不进入真实目录（避免与压缩后包体积重复计账）；包内条目不可独立清理。
 - 空间分析视图（[TreeSize.md](./TreeSize.md)）提供树形列表与行右键菜单（见 [Cleanup.md](./Cleanup.md)）；「统计数据」弹窗（`StatsPanel.vue`）给出分支体积/文件数/目录数/平均体积 + k-means 大小分布直方图，**没有**矩形树图或文件类型饼图（旧设计已废弃）。

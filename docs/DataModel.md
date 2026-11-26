@@ -84,7 +84,7 @@ interface ScanSummary {
 
 ```
 L0 候选分组：key = ignoreName ? `s:<size>` : `n:<name>#s:<size>`
-L1 crc32 门控：仅当桶内全部为压缩包条目时启用，crc 互异的条目直接淘汰
+L1 crc32 门控：仅当桶内全部为压缩包条目、且每条 crc32 均已知时启用（任一条缺失则整桶跳过门控），crc 互异的条目直接淘汰
 L2 headMD5（前 1MB）：不同 → 独立文件；≤1MB 的文件 headMD5 复用为 fullMD5，免二次读盘
 L3 fullMD5：不同 → 独立；相同 → 重复组（key = `md5:<digest>`）
 ```

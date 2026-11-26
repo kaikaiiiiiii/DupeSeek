@@ -40,6 +40,7 @@
 
 ### KI-2 提权重扫仅 Windows
 权限不足时的「提权重扫」走 PowerShell `Start-Process -Verb RunAs`（UAC）。Linux/mac 无此路径：不可读文件/目录计入 denied 计数并在结果中标注，扫描不中断。**定案：Linux/mac 不做提权，denied 即可。**
+**已知（待修）**：扫描页的提权 info-bar 未按平台判断，Linux/mac 上 `denied > 0` 时仍显示「以管理员身份重启」按钮；点击后主进程尝试启动 `powershell.exe` 必然失败并提示「未获得授权」，不会造成其它副作用。
 
 ### KI-3 mac 未验证项清单
 窗口 icon 仅传 Linux 分支（`src/main/index.ts`）；签名/公证未配置；unrar 已内置（x64 7.12 / arm64 7.23）但未经真机验证；`window-all-closed` 行为符合 mac 惯例（关窗不退出）。

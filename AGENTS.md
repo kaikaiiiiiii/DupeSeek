@@ -52,10 +52,10 @@ src
 * 强调色：亮色 `#0067c0`，暗色 `#4cc2ff`（Win11 系统蓝系）；危险等语义色跟随 Fluent 语义。
 * 主题：亮 / 暗双主题，默认跟随系统（`prefers-color-scheme`），设置页可手动切换。所有颜色必须走 main.css 的主题令牌（`:root` 与暗色作用域），组件内禁止硬编码明暗色值。
 * 窗口：Windows 全部启用 `titleBarStyle: hidden` + 透明 `titleBarOverlay` 自绘标题栏；Win11（build ≥ 22621）追加 Mica 质感（`backgroundMaterial`），Win10 无 Mica 但仍自绘标题栏——视觉改动必须验证「无 Mica」的降级形态。
-* 图标：界面装饰图标用 Fluent UI System Icons（MIT）或等价线性图标，禁止用 emoji 充当功能图标；目录/文件内容图标仍走系统图标缓存（getFileIcon，large 源）与 desktop.ini 自定义图标。
+* 图标：界面装饰图标用 Fluent UI System Icons（MIT）或等价线性图标，禁止用 emoji 充当功能图标；文件内容图标走系统图标服务 `getFileIcon`（large 源），目录优先 desktop.ini 自定义图标、否则内置文件夹图标（盘根取 `getFileIcon` 的盘符图标）。
 * 列表：悬停 / 选中 / 聚焦三态齐备；加载用骨架屏（shimmer）而非纯文字提示。
 * 圆角基准：容器 8px、行内元素 4px；信息提示用彩边 info-bar 样式（着色背景 + 图标 + 动作）。
-* 样式参考库：`vendor/fluentui-web-components/`（组件 CSS 与结构）与 `vendor/fluentui-tokens/`（设计 token 值，亮/暗主题在 `src/alias/`）是 Fluent UI Web Components v3 的源码快照，仅作阅读摘抄之用——禁止运行时 import，禁止修改；从其摘抄样式时在目标文件注释中注明出处（组件名 + token 名）。
+* 样式参考库：`vendor/fluentui-web-components/`（组件 CSS 与结构）与 `vendor/fluentui-tokens/`（设计 token 值，亮/暗主题在 `vendor/fluentui-tokens/src/alias/`）是 Fluent UI Web Components v3 的源码快照，仅作阅读摘抄之用——禁止运行时 import，禁止修改；从其摘抄样式时在目标文件注释中注明出处（组件名 + token 名）。
 * 暗色主题、Mica 与自绘标题栏已实现（2026-11 起）；后续视觉改动继续向 Fluent 2 收敛，不得引入偏离该方向的样式。
 
 ## 变更日志

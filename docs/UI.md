@@ -54,4 +54,4 @@
 
 ## 样式参考库
 
-`vendor/fluentui-web-components/`（组件 CSS 与结构）与 `vendor/fluentui-tokens/`（设计 token 值，亮/暗主题在 `src/alias/`）是 Fluent UI Web Components v3 源码快照，**仅作阅读摘抄**：禁止运行时 import、禁止修改；摘抄时在目标文件注释注明出处（组件名 + token 名）。
+`vendor/fluentui-web-components/`（组件 CSS 与结构）与 `vendor/fluentui-tokens/`（设计 token 值，亮/暗主题在 `vendor/fluentui-tokens/src/alias/`）是 Fluent UI Web Components v3 源码快照，**仅作阅读摘抄**：禁止运行时 import、禁止修改；摘抄时在目标文件注释注明出处（组件名 + token 名）。
