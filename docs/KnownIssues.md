@@ -2,6 +2,8 @@
 
 面向用户的事实陈述：DupeSeek 官方构建覆盖 **Windows + Linux**（release 产物：NSIS 安装包 / zip 绿色版 / AppImage / deb）。**macOS 不出包**——`build/icon.icns` 已就绪，但 CI 无 mac 构建目标，运行从未在真机验证。核心链路（枚举 → 哈希 → 分桶比对 → 重复分组 → TreeSize）为纯 Node/Electron 实现，本身跨平台一致；差异集中在二进制依赖与文件系统特性上，逐项如下。
 
+> 清理范围规则、分支刷新、统计口径等**非平台类**已知缺口记录在 [Cleanup.md](./Cleanup.md)「已知缺口」。
+
 ## 各平台处理方式（定案）
 
 ### Windows
@@ -62,5 +64,5 @@ L0 桶键与去重键使用精确文件名（大小写敏感比较）。NTFS 虽
 
 ## 数据层
 
-- mtime（`st.mtimeMs` 向下取整）跨平台语义一致，仅用于保留策略（最旧/最新）。
+- mtime（`st.mtimeMs` 向下取整）跨平台语义一致，用于保留策略（最旧/最新）与分支刷新的变化检测（size 或 mtime 变即清空哈希重算）。
 - 体积统计口径：所有文件系统一律按路径双计（含硬链接，见 docs/DupeSeek.md 设计约定）。

@@ -2,63 +2,63 @@
 
 ## 架构
 
-* 标准的 electron + vue3 + typescript 架构，前端使用 vue3 进行界面开发，后端使用 electron 进行文件系统操作和重复文件识别。
-* 前端和后端通过 IPC（进程间通信）进行数据交换，确保界面响应迅速，同时能够处理大量文件的扫描和识别任务。
-* 综合使用 文件名 + 文件大小 + 前1MB md5 + 全文件 md5 + 全量 CRC32 进行重复文件识别，以实现速度和准确性的平衡。CRC32 用于快速比较压缩包内文件而无需解压，md5 用于更准确的重复文件识别。
-* 前端使用 virtual list 技术来高效地展示大量文件信息，确保界面流畅。
-* 前端使用 pinia 进行状态管理，确保应用状态的一致性和可维护性。
-* 前端的 layout 组件和 UI 功能组件分离，确保代码的模块化和可复用性。
-* 后端使用多线程或异步处理来加速文件扫描和哈希计算，避免界面卡顿。当前实现：md5（headMD5/fullMD5）计算运行在 worker_threads 线程池（`HashPool`，worker 数 `min(8, CPU核数-1)`，崩溃自动重建），设置持久化当前为 JSON 文件。
-* 文件枚举优先走 Everything：检测 `resources/bin/es.exe`（随应用分发）并确认 Everything IPC 可达，用 `-path <目标> -export-json` 获取文件与目录清单；未安装、未运行、目标未收录（如非 NTFS 卷）或查询失败时，**逐目标**回退 fs.walk。「设置」页提供两个相关开关（均默认开启、即时持久化、对下一次扫描生效、不打断进行中的扫描）：`useEverything`（Everything 枚举通道开关）与 `scanArchives`（压缩包内容解析开关，关闭时压缩包视作普通文件，仅比对包文件本身）。junction/符号链接/云占位等 reparse point 经 `/aL` 一次查询取得全量清单，子树剔除用内存前缀比较（不再逐目录 lstat）。
-**为何必须剔除 junction 子树**：junction 使同一物理文件可经多条路径到达——若不剔除，junction 路径与真实路径下的同一文件会各自入列、md5 相同，形成"文件与自己配对"的假重复组；对清理动作而言，删除任一路径后其余路径立即失效（硬链接同理，同 inode 的多路径也会互相配对）。故 reparse 子树必须整体排除，而不是仅跳过 junction 目录本身。es 属性开关实测矩阵（1.1.0.37，以 `/aL` 的 245 个 junction 清单为真值）：**每个开关只携带一个属性**的写法全部按文档语义工作——`/a-d`（仅文件）✓、`/ad`（全部目录）✓、`/aL`（列出全部 reparse 条目）✓、`/a-L`（排除 reparse）✓、`/ad-L`（目录、排除 reparse）✓；多属性塞进单个开关的组合形式损坏——`/a-d-L`、`/ad-L`、`-a-d-L` 实测仅返回目录（D 排除失效）。reparse 文件（文件符号链接/云占位文件）在 Everything 通道一并跳过：前者避免穿越链接，后者避免触发云端下载。
+- 标准 Electron + Vue 3 + TypeScript 三层架构：主进程做文件系统与计算，渲染层做界面，preload 经 contextBridge 暴露受控 API；类型统一在 `src/shared/`。前后端经 IPC 通信（协议见 [IPC.md](./IPC.md)），确保界面响应、同时能处理大量文件的扫描与识别。
+- 识别阶梯（详见 [DataModel.md](./DataModel.md) §4）：**L0 文件名+大小分桶 → crc32 门控（仅压缩包条目）→ 前 1MB headMD5 → 全量 fullMD5**，在速度与准确性间折中；空文件免哈希直接成组。默认同名同大小才进后续比较（`ignoreName` 可改为仅按大小）。
+- 前端使用虚拟列表（virtua VList，`VirtualScrollList.vue`）展示大列表；状态管理用 Pinia（见 [Store.md](./Store.md)），组件与布局解耦、一律通过 store 交换数据。
+- 后端异步化：枚举走异步 fs walk 或 Everything；md5（head/full）与压缩包解压哈希运行在 worker_threads 线程池（`HashPool`，**固定 4 个 worker**）。4 是实测折中——SSD 海量小文件 8 路快 25–35%，但 HDD 大文件 8 路并发寻道反而比单流慢 16–21%。worker 崩溃自动重建，权限不足计数并入进度。
+- 未来优化点——**介质感知 worker 调度**：网络盘/光盘等介质最优并发差异大，待成熟后按介质与大小分布动态调整（HDD 大文件 fullMD5 建议串行）。
+- 设置持久化为 `settings.json`（userData 目录），**当前没有 SQLite**（见 [DataModel.md](./DataModel.md) §9、[Database.md](./Database.md)）。
 
-**硬链接按独立文件处理（设计约定，与 junction 相反）**：硬链接不是 reparse point，两个枚举通道照常列出每个路径，引擎对它零特判——同 inode 的多路径在数据上各计一份体积（TreeSize 相应双计），哈希各算各的，并如常进入重复分组与清理流程，即完全视作两个独立文件。明确不利用"同 inode 即必然重复"的捷径（如需判定可用 stat 的 fileid 免算 md5），保持处理路径平凡。由此接受两点代价：(1) 同 inode 多路径会重复读盘算哈希，纯浪费但量级通常可忽略；(2) 「浪费空间」统计与清理释放量对硬链接组失真——删除其中一个路径并不释放数据（仅链接计数减一），界面按计两份口径报告的释放字节会偏高，只有全部路径被删数据才真正消失；若未来清理策略需要精确释放量，可按 fileid 聚合修正。
+## 文件枚举与平台差异
 
-**嵌套目标语义（设计约定）**：条目以路径为键全局唯一（Windows 大小写归一），目标降级为"扫描根 + 归属标记"。枚举注册即去重：被既有目标覆盖的路径直接跳过——后加被覆盖的子目标 0 新增 0 哈希秒完成；后加父目标只收增量，杜绝"自己配自己"的假重复与全盘 md5 风暴。移除目标时其条目向剩余覆盖者**重归属**（数据保留），无人覆盖才删除并从重复组剔除；因此删父不连坐删子。体积树中嵌套目标既作根行、又是父目标展开后的子行——同一份聚合数据多处引用，体积可加性在树内保持（子目录条长之和 = 父目录条长）。
+- 首选 **Everything**：检测 `resources/bin/es.exe`（随应用分发；另探测 Program Files 下的 Everything）并确认 Everything IPC 可达，用 `-path <目标> -export-json` 获取清单。**每目标 3 次查询**：`/a-d`（文件）、`/ad`（目录）、`/aL`（reparse 清单）；导出产物（可达数百 MB）的读盘与 `JSON.parse` 在 worker 线程执行，避免主进程卡死。未安装、未运行、目标未收录（如非 NTFS 卷）或查询失败时**逐目标**回退 fs walk，其余目标不受影响。es 属性开关实测矩阵（1.1.0.37）：每个开关只携带一个属性时语义正确（`/a-d`、`/ad`、`/aL`、`/a-L`、`/ad-L`），多属性塞进单个开关的组合形式损坏——因此 reparse 剔除统一用 `/aL` 清单做内存前缀比较，不逐目录 lstat。
+- **为何必须剔除 junction 子树**：junction 让同一物理文件可经多条路径到达，若不剔除，链接路径与真实路径下的同一文件会各自入列、md5 相同，形成「文件与自己配对」的假重复组；对清理而言删除任一路径后其余路径立即失效。故 reparse 子树整体排除（`excludeJunction`，默认开）。Everything 通道连 reparse 文件（文件符号链接/云占位）一并跳过：前者避免穿越链接，后者避免触发云端下载。**已知**：fs walk 回退通道会静默跳过文件符号链接（到底层 dirent 既非 file 也非 dir），见 [KnownIssues.md](./KnownIssues.md) KI-4。
+- **硬链接按独立文件处理**（与 junction 相反的设计约定）：硬链接不是 reparse point，两个枚举通道照常列出每个路径，引擎零特判——同 inode 的多路径各计一份体积（TreeSize 相应双计）、各算各的哈希，正常进入重复分组与清理。明确不利用「同 inode 即必然重复」的捷径，保持处理路径平凡。代价：重复读盘算哈希（量级通常可忽略）；「浪费空间」与清理释放量对硬链接组偏高（删除一个路径不释放数据）。
+- **嵌套目标语义**：条目以路径为键全局唯一（Windows 大小写归一），目标降级为「扫描根 + 归属标记」。枚举注册即去重：被既有目标覆盖的路径直接跳过——后加被覆盖的子目标 0 新增 0 哈希秒完成；后加父目标只收增量，杜绝「自己配自己」的假重复与全盘 md5 风暴。移除目标时其条目向剩余覆盖者**重归属**（数据保留），无人覆盖才删除并从重复组剔除；删父不连坐删子。体积树中嵌套目标既作根行、又是父目标展开后的子行——同一份聚合数据多处引用，体积可加性在树内保持。
+- **自动增量扫描**：目标列表变化（启动恢复、添加、删除）即自动同步——新增目标仅枚举并与现有条目比桶（现有条目哈希记忆化保留，不重复读盘；新增条目只在 L0 同桶时才触发哈希）；移除目标纯内存清理，零磁盘 I/O。正在扫描时发生的变化记挂起标记，本轮结束后自动补一轮增量同步。引擎为持久会话：条目清单与已确认组跨操作存活，组按 key 幂等回流。**「重新扫描」按钮**才会清空会话做全量重扫。
+- 目录排除为双输入框：「排除的目录名」匹配任意层级同名目录（默认 `node_modules`）：「排除的目录路径」按绝对路径排除整棵子树。被排除目录以空节点呈现（可见、0 字节、不可展开、无文件），目标本身被排除时整个目标为空。
 
-**体积树拉取协议（sizeview 懒加载）**：树的权威数据在后端（全局条集聚合 + dirs/childDirs/dirFiles 索引），前端不持有全量树、不做计算，只发三类查询：`tree:roots` / `tree:children(dir)` / `tree:files(dir, offset, limit)`，排序键与方向作为参数由后端执行。目录行携带元数据（childDirs / fileCount / fileBytes），前端无需二次请求即可画展开箭头与 `[n 个文件]` 占位行。`scan:progress` 不再捎带树数据，只携带 `treeRev` 版本号——扫描中版本每秒推进，前端版本变化时失效缓存、仅重取**已展开路径**。GUI 侧内存占用从 O(全盘) 降为 O(已展开范围)，虚拟滚动的定高约束由"加载中"占位行满足。
+## 空间分析与体积树
 
-**RAR 数据获取的实测结论（重要）**：`unrar p -inul`（无条目过滤的全量流）在 UnRAR 7.30 beta 1 上会**确定性跳过尾部条目**（vosscript.normal.rar：9487 条仅输出 9433 条、短 1.2MB，两轮完全一致；`unrar t` 全过、逐条独立解压正常，排除包损坏）。因此 RAR 数据获取**只用 `unrar x` 批量解压到临时目录**（x 实测完整解出全部条目），流式 p 切片方案弃用；UnRAR.exe 为 7.30 beta 1（rarlab 当前分发版本），后续可换稳定版复测。三平台原生 unrar 已随应用内置（win 7.30b1 / linux 7.23 / mac 7.23+7.12，见 resources/bin/unrar/README.md），`unrarExe()` 按 platform/arch 解析；各平台处理方式定案见 docs/KnownIssues.md。工程约定：文件查询用 `/a-d`，目录查询用 `/ad`，junction 判定用 `/aL` 清单做内存前缀比较（不逐目录 lstat）。注意目录清单必须包含 junction 目录本身，否则其子树内的文件无法按前缀过滤。
-* 哈希 worker 数固定为 4（基准实测的折中：SSD 海量小文件 x8 比 x4 快 25-35%，但 HDD 大文件全量读 8 路并发寻道竞争反而比单流慢 16-21%，x4 居中）。基准与诊断脚本集中在 tools/ 目录（bench-async / bench-sync / test-es-flags / test-rar-* / test-unrar-hang / 早期原型 cleanDuplicateFiles.v2.js）。
-* **未来优化点——介质感知 worker 调度**：存储介质除 HDD/SSD 外还可能是网络挂载盘、光盘等，各自最优并发差异很大。待软件成熟后引入介质探测（`Get-PhysicalDisk` MediaType / IO 花费采样），按介质与文件大小分布动态调整 worker 数与大文件全量读的并行度（HDD 大文件 fullMD5 建议串行）。
-* 压缩包（zip/7z/rar）视为特殊目录：元信息（size/crc32）经 7za `-slt` 与 unrar（WASM）读取，条目以 `容器::包内路径` 建条；纯压缩包桶先做 crc32 门控，head/full 比较时解压到内存并流式哈希——rar 走原生 `resources/bin/UnRAR.exe`（`p -inul` 流式输出，注意包内路径需反斜杠），7za 走 `x -so`。体积树中压缩包显示为合成目录节点（包内体积按解压后大小计），包内副本不可独立清理。
-* 后端使用 sqlite 数据库来存储扫描结果和用户设置，确保数据的持久化和下次的快速访问。
+- 体积树的权威数据在主进程（全局条集聚合 + dirs/childDirs/dirFiles 索引）；前端不持有全量树、不做计算，只发四类查询：`tree:roots` / `tree:children(dir)` / `tree:files(dir, offset, limit)` / `tree:stats(path)`，排序键与方向作为参数由后端执行。前端只缓存**已展开范围**，GUI 侧内存从 O(全盘) 降为 O(已展开)。
+- `scan:progress` 不捎带树数据，只携带 `treeRev` 版本号；另有一条独立的 `scan:rev` 广播用于移除目标、分支刷新等不伴随 progress 的变更。前端按版本失效缓存、仅重取已展开路径，400ms 尾沿节流。
+- 体积口径：文件体积沿祖先链累加到目标根；重复占用按「每组保留 mtime 最早的一份，其余副本体积计入各自目录链」归集。压缩包内容在树中呈现为 `容器路径::` 合成目录链，包内条目体积只累加到合成根、不进入真实目录（避免与压缩后包体积重复计账）；包内条目不可独立清理。
+- 空间分析视图（[TreeSize.md](./TreeSize.md)）提供树形列表与行右键菜单（见 [Cleanup.md](./Cleanup.md)）；「统计数据」弹窗（`StatsPanel.vue`）给出分支体积/文件数/目录数/平均体积 + k-means 大小分布直方图，**没有**矩形树图或文件类型饼图（旧设计已废弃）。
+
+## 压缩包处理
+
+- 压缩包（zip/7z/rar）视为特殊目录：元信息（size/crc32）经 7za `-slt` 与 node-unrar-js（WASM）读取，条目以 `容器::包内路径` 建条；纯压缩包桶先做 crc32 门控，head/full 比较时解压并流式哈希——zip/7z 走 `7za x -so`；rar 走原生 `unrar`。
+- **RAR 数据获取实测结论（重要）**：`unrar p -inul`（无条目过滤的全量流）在 UnRAR 7.30 beta 1 上会确定性跳过尾部条目（vosscript.normal.rar：9487 条仅输出 9433 条，两轮一致；`unrar t` 全过、逐条独立解压正常，排除包损坏）。因此 RAR 数据获取**只用 `unrar x` 批量解压到临时目录**（带完成标记跨操作复用），流式 `p` 方案已弃用（仅作解压失败条目的兜底）。三平台原生 unrar 已随应用内置（win 7.30b1 / linux 7.23 / mac 7.23+7.12，见 `resources/bin/unrar/README.md`），`unrarExe()` 按 platform/arch 解析；平台定案见 [KnownIssues.md](./KnownIssues.md)。
+- 压缩包内容解析可在「软件设置」页关闭（关闭时压缩包视作普通文件，仅比对包文件本身）；压缩包文件本身始终参与比对。
 
 ## UI
 
-* 整个 electron 窗体有最小长宽限制，确保界面元素的正常显示。
-* 主界面分为软件功能设置栏（Settings）， '操作目标列表 (TargetList)' 和右侧的 '多 tab 操作切换区'，右侧通过 tab 切换不同的操作和功能界面。Tab 在顶部，下方是对应的功能界面。
-  * Tab1: 'Treesize 可视化'，用于展示磁盘空间使用情况和重复文件分布（扫描同时完成目录与体积构建）。
-  * Tab2: '重复文件扫描设置'，用于配置重复文件扫描的相关参数，并启动扫描过程。
-  * Tab3: '重复文件列表'，用于显示扫描结果。
-  * 更多 tab: '软件设置' 等。操作目标的添加/删除不占用 Tab——由左侧 TargetList 通过系统对话框、拖拽（系统拖放）与悬停操作完成。
-* 自动扫描（增量）：目标列表变化（启动恢复、添加、删除）即自动同步——新增目标仅枚举并与现有条目比桶（现有条目的哈希记忆化保留，不重复读盘；新增条目只在 L0 同桶时才触发哈希）；移除目标纯内存清理，零磁盘 I/O。正在扫描时不重复触发，下一次列表变化再一并纳入。引擎为持久会话：条目清单与已确认组跨操作存活，组按 key 幂等回流。
-* 窗体没有菜单栏，所有功能通过界面上的按钮和选项进行操作。
-
-> 详细定义见 UI.md
+- 窗口有最小尺寸限制（900×600，默认 1200×800），保证界面元素正常显示；无菜单栏。
+- 主界面：左侧「目标列表」（TargetList，280px 开放式窗格），右侧为顶部标签页 + 对应功能界面（KeepAlive 保活）。标签页四个，见 [Tabs.md](./Tabs.md)：
+  - 空间分析（TreeSizeView）——体积树 + 分支统计；
+  - 扫描参数（ScanView）——扫描选项、进度、提权提示与汇总；
+  - 清理规则（DupeList）——重复组、筛选、勾选待清理与删除；
+  - 软件设置（SettingsView）——Everything / 压缩包解析开关、主题、RAR 能力检测。
+- 目标的添加/删除不占用标签页：由左侧列表通过系统对话框、拖拽（系统拖放）与悬停操作完成。
+- 视觉遵循 Fluent 2（亮/暗双主题、Win11 Mica、自绘标题栏、内联 Fluent 图标），规则见 [UI.md](./UI.md) 与 AGENTS.md「视觉设计」。
 
 ## 组件与功能设计
 
-* 基于 vue 的组件化设计，通过多个 sfc 的组合构成界面。
-* 布局组件与功能组件应尽量解耦，组件间通过 pinia 统一管理和交换数据，并通过 contextBridge 和后端交互。
+- 基于 Vue 单文件组件，`components/` 平铺页面级与通用组件，`stores/` 管状态，`utils/` 放格式化/主题等纯函数（没有 `feature/`、`layouts/` 目录）。
+- 页面级组件：`TreeSizeView.vue`、`ScanView.vue`、`DupeList.vue`、`SettingsView.vue`；通用组件：`TargetList.vue`、`TreeList.vue`、`VirtualScrollList.vue`、`ContextMenu.vue`、`StatsPanel.vue`、`ConfirmDialog.vue`、`AppIcon.vue`、`TreeIcon.vue`。
+- 布局与功能组件解耦，组件间只通过 Pinia 交换数据，经 contextBridge 与后端交互。
 
-### 功能组件详细说明文档链接
+### 文档索引
 
-- [Scan.md](./Scan.md)：用于配置重复文件扫描的相关参数，例如文件类型过滤器、是否包含隐藏文件等。
-- [DupeList.md](./DupeList.md)：用于显示扫描结果中的重复文件列表，支持查看文件详细信息和进行重复文件处理操作。
-- [TreeSize.md](./TreeSize.md)：用于展示磁盘空间使用情况和重复文件分布，帮助用户更直观地了解磁盘空间的使用情况。
-- [Tabs.md](./Tabs.md)：用于实现不同功能界面的 tab 切换逻辑和界面设计。
-- [Settings.md](./Settings.md)：用于配置应用的全局设置。
+- 功能组件：[Scan.md](./Scan.md)、[DupeList.md](./DupeList.md)、[TreeSize.md](./TreeSize.md)、[Cleanup.md](./Cleanup.md)、[Tabs.md](./Tabs.md)、[Settings.md](./Settings.md)、[TargetList.md](./TargetList.md)、[UI.md](./UI.md)。
+- 技术设计：[DataModel.md](./DataModel.md)、[IPC.md](./IPC.md)、[Store.md](./Store.md)、[Database.md](./Database.md)、[KnownIssues.md](./KnownIssues.md)。
 
-### 技术设计文档
+## 清理与扩展功能
 
-- [DataModel.md](./DataModel.md)：共享类型定义与数据模型。
-- [IPC.md](./IPC.md)：前后端 IPC 通信协议定义。
-- [Store.md](./Store.md)：Pinia 状态管理设计。
-- [Database.md](./Database.md)：SQLite 数据库表结构设计。
+- 清理入口在「清理规则」页：勾选即待清理，配合选择器/范围规则快速圈定；确认后删除进回收站。空间分析行右键可对单个位置应用清理范围，或单独刷新该子树（不改变目标列表）。规则与不变量见 [Cleanup.md](./Cleanup.md)。
+- 当前**仅实现**「删除进回收站」；硬链接、合并移动为后续迭代（`DataModel.md` §6 已预留 `keepPaths`）。
+- 设置持久化、RAR 能力检测、UAC 提权重扫等系统能力见 [Settings.md](./Settings.md)、[KnownIssues.md](./KnownIssues.md)。
 
-## 非界面功能设计
+## 数据结构与算法
 
-
-
-## 数据结构与算法设计
+见 [DataModel.md](./DataModel.md)（条目/组/树/范围规则等共享类型）与 [Cleanup.md](./Cleanup.md)（清理不变量与统计口径）。实现集中在 `src/main/scan/engine.ts`。
