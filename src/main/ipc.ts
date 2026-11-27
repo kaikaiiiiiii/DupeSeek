@@ -81,4 +81,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       engine.treeFiles(dir, sortKey, desc, offset, limit)
   )
   ipcMain.handle('tree:stats', (_e, path: string) => engine.treeStats(path))
+  ipcMain.handle('graph:relations', (_e, maxDepth: number, minSharedBytes: number) =>
+    engine.graphRelations(maxDepth, minSharedBytes)
+  )
 }

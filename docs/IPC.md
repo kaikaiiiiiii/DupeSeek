@@ -1,6 +1,6 @@
 # IPC.md — 前后端 IPC 通信协议
 
-> v0.4（2026-11-26）。类型引用见 [DataModel.md](./DataModel.md)，实现在 `src/main/ipc.ts` 与 `src/preload/index.ts`，契约类型在 `src/shared/types.ts` 的 `DupeSeekApi`。
+> v0.5（2026-11-27）。类型引用见 [DataModel.md](./DataModel.md)，实现在 `src/main/ipc.ts` 与 `src/preload/index.ts`，契约类型在 `src/shared/types.ts` 的 `DupeSeekApi`。
 >
 > **实现状态**：全部下列通道均已落地。`scan:error` 事件仅保留订阅端（主进程当前不发送，异常经 invoke reject 上报，见 §4）。
 
@@ -34,6 +34,7 @@
 | `tree:children` | `dir: string, sortKey, desc` | `TreeChildrenReply \| null` | 某目录的子目录行 + 直属文件聚合；目录不存在返回 null |
 | `tree:files` | `dir, sortKey, desc, offset, limit` | `TreeFilesReply \| null` | 某目录直属文件分页；目录不存在返回 null |
 | `tree:stats` | `path: string` | `BranchStats \| null` | 分支统计（右键「统计数据」）；`容器::` 合成节点或不在树中返回 null |
+| `graph:relations` | `maxDepth: number, minSharedBytes: number` | `GraphRelationsReply` | 目录关系图（「关系气泡」「关系捆绑」共用）：按展示深度聚合目录之间的共享重复内容，无向、不含时间/行为语义；见 docs/Relations.md |
 
 ## 3. Main → Renderer（send 事件）
 
@@ -96,6 +97,7 @@ interface DupeSeekApi {
   treeChildren(dir: string, sortKey: TreeSortKey, desc: boolean): Promise<TreeChildrenReply | null>
   treeFiles(dir: string, sortKey: TreeSortKey, desc: boolean, offset: number, limit: number): Promise<TreeFilesReply | null>
   treeStats(path: string): Promise<BranchStats | null>
+  graphRelations(maxDepth: number, minSharedBytes: number): Promise<GraphRelationsReply>
 
   // 事件（返回取消订阅函数）
   onScanProgress(cb: (p: ScanProgress) => void): () => void

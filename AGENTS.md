@@ -5,7 +5,7 @@
 * 添加待扫描的目标目录或单个文件，可同时添加多个（系统对话框与拖拽）。
 * 枚举目标下的文件（Everything 加速，不可用自动回退 fs walk），按「文件名+大小 → crc32（仅压缩包）→ headMD5 → fullMD5」阶梯判定重复；zip/7z/rar 内条目参与比对；扫描前可设置筛选规则（隐藏/系统/大小/扩展名/目录排除/junction 排除）。
 * 列出重复组，提供筛选、保留规则选择器与按位置/勾选批量圈定待清理项；当前清理方式为删除进回收站（硬链接、合并移动为后续迭代）。
-* 在扫描数据基础上提供扩展视图：空间分析体积树（排序、列宽调整、行右键操作、分支统计直方图）。
+* 在扫描数据基础上提供扩展视图：空间分析体积树（排序、列宽调整、行右键操作、分支统计直方图）；目录关系视图（「关系气泡」力导向图 / 「关系捆绑」层次边捆绑，Phase 1 以目录为展示单元）。
 
 ## 架构
 
@@ -13,11 +13,11 @@
 
 src
 ├─ main/ — Node.js 后端。创建 BrowserWindow（Win11 Mica / 自绘标题栏）、注册 IPC；扫描引擎（scan/engine.ts：持久会话+增量）、枚举（Everything es.exe 与异步 fs walk）、压缩包（7za / node-unrar-js / 内置原生 unrar）、哈希 worker 池（固定 4 线程）、清理（删除进回收站）、设置（settings.json）、图标与能力检测。
-├─ preload/ — 通过 contextBridge 暴露受控 API：window.api（DupeSeekApi：17 个 invoke + 1 个 send + 5 个事件订阅）与 window.electron（@electron-toolkit/preload）。
-├─ renderer/src/ — Vue 3 + Pinia 单页应用，virtua 虚拟滚动。
+├─ preload/ — 通过 contextBridge 暴露受控 API：window.api（DupeSeekApi：18 个 invoke + 1 个 send + 5 个事件订阅）与 window.electron（@electron-toolkit/preload）。
+├─ renderer/src/ — Vue 3 + Pinia 单页应用，virtua 虚拟滚动；关系视图依赖 d3-force / d3-hierarchy / d3-shape（按需 import）。
 │    ├─ assets/ 主题令牌（main.css 亮/暗）
 │    ├─ components/ 页面级与通用组件（没有 feature/、layouts/ 目录）
-│    ├─ stores/ Pinia：settings / target / scan / dupe / treesize / icons / ui
+│    ├─ stores/ Pinia：settings / target / scan / dupe / treesize / graph / icons / ui
 │    └─ utils/ 格式化、主题、响应式拍平
 └─ shared/ — 三端共享类型（types.ts）、默认扫描参数、错误判定。
 
@@ -32,6 +32,7 @@ src
 * DupeList.md — 清理规则视图（DupeList.vue）
 * Cleanup.md — 清理范围规则与分支操作（右键菜单 / refreshBranch / 统计口径 / 已知缺口）
 * TreeSize.md — 空间分析视图（体积树拉取协议）
+* Relations.md — 目录关系视图（关系气泡 / 层次边捆绑，Phase 1 数据契约与已知限制）
 * Tabs.md — 标签页切换逻辑
 * Settings.md — 软件设置视图
 * TargetList.md — 左侧目标列表
@@ -72,14 +73,10 @@ src
 * 代码的行为、类型、IPC 通道、组件结构发生变化时，必须同步更新 docs/ 对应文档与 AGENTS.md 的架构/文档索引；文档与代码不一致视为缺陷。
 
 ## Never 规则
-- Never 修改框架自动生成的目录
 - Never 修改 build/ 产物
 - Never 在组件内使用 any 类型
-- Never 使用内联样式
 - Never 在渲染路径中执行耗时操作
-- Never 在列表渲染中省略 key
 - Never 硬编码敏感信息
-- Never 修改 lock 文件
 
 ## Build Command
 

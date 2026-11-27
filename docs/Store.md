@@ -13,6 +13,7 @@
 | `useScanStore`     | `scan.ts`       | 扫描草稿、状态机、进度、目标增量同步、分支刷新    | 草稿随设置持久化               |
 | `useDupeStore`     | `dupe.ts`       | 重复组集合、筛选、勾选集、范围规则、清理执行      | 否（会话内）                   |
 | `useTreeSizeStore` | `treesize.ts`   | 体积树拉取式缓存、展开状态、平面行装配、排序      | 否（会话内）                   |
+| `useGraphStore`    | `graph.ts`      | 目录关系图回包缓存（按深度/阈值分键）、加载态与错误 | 否（会话内）                  |
 | `useIconStore`     | `icons.ts`      | 行内系统图标的请求合批与缓存                      | 否（主进程另有缓存）           |
 | `useUiStore`       | `ui.ts`         | 界面级状态：当前标签页（跨组件跳转）              | 否                             |
 
@@ -134,16 +135,35 @@ actions: request(path)   // 120ms 合批 → app:file-icons；失败保持占位
 
 只挂载可见行时请求（`TreeIcon` onMounted 触发），未展开/不可见路径不产生开销；主进程侧还有 path → 图标缓存。
 
-## 8. useUiStore
+## 8. useGraphStore
 
 ```ts
-state: { activeTab: 'treesize' | 'scan' | 'dupes' | 'settings' }
+state: {
+  cache: Record<'depth:minSharedBytes', GraphRelationsReply>
+  loading: Set<string>          // 在途查询键
+  errors: Record<string, string>
+}
+getters/computed: 无（视图自行按当前参数取值）
+actions: replyOf(depth, minBytes)、loadingOf(depth, minBytes)、errorOf(depth, minBytes)、
+         load(depth, minBytes, force?)
+```
+
+- 供「关系气泡」「关系捆绑」两个视图共用：数据由主进程 `graph:relations` 实时聚合，
+  渲染层只缓存回包，不持有重复内容明细；不同深度/阈值各自分键缓存。
+- 会话数据变化（`scan:rev` / 扫描进度 treeRev → `useTreeSizeStore.rev`）时，视图在
+  500ms 防抖后以 `force = true` 重取；查询在途时重复调用直接忽略。
+- 视图参数（深度、最小共享字节）保存在组件本地，不进入 store、不持久化。
+
+## 9. useUiStore
+
+```ts
+state: { activeTab: 'treesize' | 'relation-force' | 'relation-bundle' | 'scan' | 'dupes' | 'settings' }
 actions: setActiveTab(tab)
 ```
 
 界面级状态不进入数据模型；跨组件跳转（如空间分析右键「清理该位置重复文件」→ 清理规则页）通过它完成。`App.vue` 的 Tab 栏与内容区都读它，切换组件用 `<KeepAlive>` 保活。
 
-## 9. 跨 store 依赖与初始化
+## 10. 跨 store 依赖与初始化
 
 - `scan.ts` 依赖 `treesize`（setRev）、`dupe`（appendGroups）、`target`、`settings`；`treesize.ts` 依赖 `scan`（progress 的 treeRev）。二者相互引用，靠 Pinia 延迟实例化规避循环依赖。
 - `App.vue` 启动顺序：`initTheme()` → `settings.load()` → `target.init(settings.targets)` → `scan.initDraft(settings.scanDraft)` → `dupe.reset()` →（若 `resumeScan` 则 `rescanAll()`）。`target.init` 触发的 watch 会让已恢复的目标自动开始增量同步。

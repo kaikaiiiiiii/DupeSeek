@@ -33,6 +33,8 @@
 import { computed, onMounted, watch } from 'vue'
 import { initTheme } from './utils/theme'
 import DupeList from './components/DupeList.vue'
+import RelationBundleView from './components/RelationBundleView.vue'
+import RelationForceView from './components/RelationForceView.vue'
 import ScanView from './components/ScanView.vue'
 import SettingsView from './components/SettingsView.vue'
 import TargetList from './components/TargetList.vue'
@@ -45,6 +47,8 @@ import { useUiStore } from './stores/ui'
 
 const tabs = [
   { id: 'treesize', label: '空间分析', component: TreeSizeView },
+  { id: 'relation-force', label: '关系气泡', component: RelationForceView },
+  { id: 'relation-bundle', label: '关系捆绑', component: RelationBundleView },
   { id: 'scan', label: '扫描参数', component: ScanView },
   { id: 'dupes', label: '清理规则', component: DupeList },
   { id: 'settings', label: '软件设置', component: SettingsView }
@@ -136,10 +140,14 @@ watch(
   display: flex;
   gap: 4px;
   margin-bottom: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .tab-btn {
-  padding: 8px 18px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 8px 14px;
   border: none;
   border-radius: 4px;
   background: transparent;

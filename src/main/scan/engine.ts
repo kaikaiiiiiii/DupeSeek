@@ -7,6 +7,8 @@ import type {
   BranchStats,
   DupeGroup,
   FileEntry,
+  GraphNode,
+  GraphRelationsReply,
   RefreshBranchReport,
   ScanProgress,
   ScanSettings,
@@ -1531,6 +1533,170 @@ export class ScanEngine {
       avgSize: fileCount > 0 ? rec.size / fileCount : 0,
       histogram: kmeansBuckets(sizes, 10)
     }
+  }
+
+  /**
+   * 目录关系图（graph:relations）：把重复内容类按「展示单元」聚合为目录对关系。
+   * 展示单元 = 目标根与目标下指定深度的目录（目标根 depth=0）；边 = 两个单元之间
+   * 可互相消去的重复内容，无向、不含任何时间/行为语义。Phase 1 供「关系气泡」
+   * 与「关系捆绑」两个视图使用，见 docs/Relations.md。
+   */
+  graphRelations(maxDepth: number, minSharedBytes: number): GraphRelationsReply {
+    const depthLimit = Math.max(0, Math.min(6, Math.floor(maxDepth)))
+    const minBytes = Math.max(0, Math.floor(minSharedBytes))
+    /** 单组位置数上限：超过视为噪声大组（如全盘相同的空/模板文件），不参与关系图 */
+    const MAX_UNITS_PER_GROUP = 32
+    const MAX_EDGES = 20000
+
+    const rootCache = new Map<string, string | null>()
+    /** 单元所属目标根（取最深覆盖者）；不在任何目标内返回 null */
+    const rootOf = (dir: string): string | null => {
+      const cached = rootCache.get(dir)
+      if (cached !== undefined) return cached
+      const key = this.keyOf(dir)
+      let best: string | null = null
+      let bestLen = -1
+      for (const t of this.coveredTargets) {
+        const stop = this.stopOf(t)
+        if ((key === stop || key.startsWith(stop + '\\')) && stop.length > bestLen) {
+          best = t
+          bestLen = stop.length
+        }
+      }
+      rootCache.set(dir, best)
+      return best
+    }
+
+    const unitCache = new Map<string, string | null>()
+    /** 实例目录 → 展示单元：深度超过 depthLimit 时上卷到该层的祖先目录 */
+    const displayUnit = (dir: string): string | null => {
+      const cached = unitCache.get(dir)
+      if (cached !== undefined) return cached
+      const root = rootOf(dir)
+      let unit: string | null = null
+      if (root !== null) {
+        const stop = this.stopOf(root)
+        let cur = dir
+        let depth = 0
+        while (this.keyOf(cur) !== stop) {
+          const parent = path.dirname(cur)
+          if (parent === cur) break
+          cur = parent
+          depth++
+        }
+        const cut = depth - Math.min(depth, depthLimit)
+        unit = dir
+        for (let i = 0; i < cut; i++) unit = path.dirname(unit)
+      }
+      unitCache.set(dir, unit)
+      return unit
+    }
+
+    // —— 内容类 → 展示单元对 的共享量聚合 ——
+    interface PairAgg {
+      source: string
+      target: string
+      sharedBytes: number
+      sharedFiles: number
+    }
+    const pairs = new Map<string, PairAgg>()
+    let truncatedGroups = 0
+    const unitKey = (p: string): string => this.keyOf(p)
+    for (const group of this.knownGroups.values()) {
+      if (group.size === 0 || group.entries.length < 2) continue
+      const counts = new Map<string, number>()
+      for (const e of group.entries) {
+        // Phase 1：压缩包内条目按其容器所在目录参与关系（包视为特殊目录的简化）
+        const dir = e.containerPath !== null ? path.dirname(e.containerPath) : path.dirname(e.path)
+        const unit = displayUnit(dir)
+        if (unit === null) continue
+        counts.set(unit, (counts.get(unit) ?? 0) + 1)
+      }
+      if (counts.size < 2) continue
+      if (counts.size > MAX_UNITS_PER_GROUP) {
+        truncatedGroups++
+        continue
+      }
+      const units = [...counts.keys()]
+      for (let i = 0; i < units.length; i++) {
+        for (let j = i + 1; j < units.length; j++) {
+          const a = units[i]
+          const b = units[j]
+          const sharedFiles = Math.min(counts.get(a) as number, counts.get(b) as number)
+          if (sharedFiles <= 0) continue
+          const ak = unitKey(a)
+          const bk = unitKey(b)
+          const key = ak < bk ? `${ak}\u0000${bk}` : `${bk}\u0000${ak}`
+          const agg = pairs.get(key)
+          const sharedBytes = sharedFiles * group.size
+          if (agg) {
+            agg.sharedBytes += sharedBytes
+            agg.sharedFiles += sharedFiles
+          } else {
+            pairs.set(key, { source: a, target: b, sharedBytes, sharedFiles })
+          }
+        }
+      }
+    }
+
+    // —— 阈值过滤 + 规模上限 ——
+    let edges = [...pairs.values()].filter((p) => p.sharedBytes >= minBytes)
+    edges.sort((a, b) => b.sharedBytes - a.sharedBytes)
+    if (edges.length > MAX_EDGES) edges = edges.slice(0, MAX_EDGES)
+
+    // —— 节点：边端点 + 祖先链（字节/回收走体积树口径）——
+    const nodes = new Map<string, GraphNode>()
+    const nodeOf = (p: string): GraphNode => {
+      const k = unitKey(p)
+      const hit = nodes.get(k)
+      if (hit) return hit
+      const rec = this.dirs.get(p)
+      const node: GraphNode = {
+        id: p,
+        name: path.basename(p) || p,
+        parentId: '',
+        depth: 0,
+        bytes: rec ? rec.size : 0,
+        reclaim: rec ? rec.dup : 0,
+        hasChildren: false
+      }
+      nodes.set(k, node)
+      return node
+    }
+    const addChain = (unit: string): void => {
+      const root = rootOf(unit)
+      if (root === null) {
+        nodeOf(unit)
+        return
+      }
+      const stop = this.stopOf(root)
+      const chain: string[] = [unit]
+      let cur = unit
+      while (this.keyOf(cur) !== stop) {
+        const parent = path.dirname(cur)
+        if (parent === cur) break
+        cur = parent
+        chain.push(cur)
+      }
+      for (let i = 0; i < chain.length; i++) {
+        const node = nodeOf(chain[i])
+        node.depth = chain.length - 1 - i
+        node.parentId = i + 1 < chain.length ? chain[i + 1] : ''
+      }
+    }
+    for (const e of edges) {
+      addChain(e.source)
+      addChain(e.target)
+    }
+    const list = [...nodes.values()]
+    for (const n of list) {
+      if (n.parentId === '') continue
+      const parent = nodes.get(unitKey(n.parentId))
+      if (parent) parent.hasChildren = true
+    }
+    list.sort((a, b) => (a.depth === b.depth ? a.id.localeCompare(b.id) : a.depth - b.depth))
+
+    return { rev: this.treeRev, nodes: list, edges, truncatedGroups }
   }
 
   /** 阶梯比较一个桶，返回其中的全部重复组（可能多于一个） */

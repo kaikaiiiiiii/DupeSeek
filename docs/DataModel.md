@@ -217,3 +217,37 @@ interface AppCapabilities {
 | D4   | 目标列表是否持久化                 | 已实现：随 `settings.json` 的 `targets` 保存                         |
 | D5   | 压缩包条目 ID 的虚拟分隔符         | 已实现：`::`（`!` 在 Windows 文件名中合法有歧义）                    |
 | D6   | SQLite 数据库                      | 未实现；当前全部持久化为 JSON（`settings.json`），扫描结果不落库     |
+
+## 12. 目录关系图数据（Phase 1，2026-11 新增）
+
+「关系气泡 / 关系捆绑」两个视图共用的回包（`graph:relations`），定义与聚合口径见 [Relations.md](./Relations.md)：
+
+```ts
+interface GraphNode {
+  id: string        // 展示单元路径（目录绝对路径，体积树同口径）
+  name: string
+  parentId: string  // 父单元路径；目标根为 ''
+  depth: number     // 相对目标根层级，目标根 0
+  bytes: number     // 目录（含子孙）聚合字节数
+  reclaim: number   // 目录（含子孙）重复副本占用字节数
+  hasChildren: boolean
+}
+
+interface GraphEdge {
+  source: string
+  target: string
+  sharedBytes: number   // Σ min(两侧副本数) × 内容类大小（无向，跨内容类累加）
+  sharedFiles: number   // Σ min(两侧副本数)
+}
+
+interface GraphRelationsReply {
+  rev: number             // 体积树版本号，变化即失效前端缓存
+  nodes: GraphNode[]      // 边端点 + 祖先链（供捆绑视图拼树）
+  edges: GraphEdge[]      // 已按 sharedBytes 排序/过滤，上限 20000
+  truncatedGroups: number // 单组位置数 > 32 被跳过的噪声内容类组数
+}
+```
+
+- 展示单元 = 目标根（depth 0）或目标下 `maxDepth` 内的目录；更深目录上卷到该层祖先；
+- Phase 1 压缩包内条目按**容器所在目录**参与关系（包视为特殊目录的简化）；
+- 无向边、无时间/行为语义；空文件组不产生边。

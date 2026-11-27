@@ -164,6 +164,46 @@ export interface RefreshBranchReport {
   treeRev: number
 }
 
+/**
+ * 目录关系图节点（graph:relations）：一个展示单元，即目标根或某一深度内的目录。
+ * Phase 1 展示单元 = 目录；后续可扩展为「块」（见 docs/Relations.md）。
+ */
+export interface GraphNode {
+  /** 路径（目录绝对路径，与体积树同一口径） */
+  id: string
+  name: string
+  /** 父单元路径；目标根为空字符串 */
+  parentId: string
+  /** 相对目标根的层级（目标根为 0） */
+  depth: number
+  /** 该目录（含子孙）聚合字节数 */
+  bytes: number
+  /** 该目录（含子孙）中重复副本占用的字节数（体积树口径） */
+  reclaim: number
+  /** 是否有子单元（关系图当前不提供下钻，仅给后续扩展保留） */
+  hasChildren: boolean
+}
+
+/** 目录关系图边：两个展示单元之间共享的重复内容（无向、无时间语义） */
+export interface GraphEdge {
+  source: string
+  target: string
+  /** 共享重复内容字节：Σ min(两侧副本数) × 内容类大小 */
+  sharedBytes: number
+  /** 共享重复内容类包含的文件数：Σ min(两侧副本数) */
+  sharedFiles: number
+}
+
+/** 目录关系图回包（graph:relations） */
+export interface GraphRelationsReply {
+  /** 体积树版本号：数据变更时前端据此失效缓存 */
+  rev: number
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  /** 因单组位置数过多（噪声大组）而跳过的内容类组数 */
+  truncatedGroups: number
+}
+
 export interface DupeGroup {
   key: string
   size: number
@@ -239,6 +279,8 @@ export interface DupeSeekApi {
   ): Promise<TreeFilesReply | null>
   /** 分支统计数据（右键菜单「统计数据」）；路径不在树中返回 null */
   treeStats(path: string): Promise<BranchStats | null>
+  /** 目录关系图：按展示深度聚合目标根/目录之间的共享重复内容 */
+  graphRelations(maxDepth: number, minSharedBytes: number): Promise<GraphRelationsReply>
   /** 打开路径：目录交给系统打开；文件定位到所在文件夹 */
   openPath(path: string, kind: 'dir' | 'file'): Promise<void>
   /** 单独重遍历某子树并与会话比对（不改变目标列表）；按当前扫描参数执行 */

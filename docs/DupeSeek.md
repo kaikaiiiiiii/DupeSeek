@@ -34,8 +34,10 @@
 ## UI
 
 - 窗口有最小尺寸限制（900×600，默认 1200×800），保证界面元素正常显示；无菜单栏。
-- 主界面：左侧「目标列表」（TargetList，280px 开放式窗格），右侧为顶部标签页 + 对应功能界面（KeepAlive 保活）。标签页四个，见 [Tabs.md](./Tabs.md)：
+- 主界面：左侧「目标列表」（TargetList，280px 开放式窗格），右侧为顶部标签页 + 对应功能界面（KeepAlive 保活）。标签页六个，见 [Tabs.md](./Tabs.md)：
   - 空间分析（TreeSizeView）——体积树 + 分支统计；
+  - 关系气泡（RelationForceView）——目录关系力导向气泡图，Phase 1 探索性视图，见 [Relations.md](./Relations.md)；
+  - 关系捆绑（RelationBundleView）——目录关系径向树 + 层次边捆绑，见 [Relations.md](./Relations.md)；
   - 扫描参数（ScanView）——扫描选项、进度、提权提示与汇总；
   - 清理规则（DupeList）——重复组、筛选、勾选待清理与删除；
   - 软件设置（SettingsView）——Everything / 压缩包解析开关、主题、RAR 能力检测。

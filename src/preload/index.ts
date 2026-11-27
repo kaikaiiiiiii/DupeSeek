@@ -41,6 +41,8 @@ const api: DupeSeekApi = {
   treeFiles: (dir, sortKey, desc, offset, limit) =>
     ipcRenderer.invoke('tree:files', dir, sortKey, desc, offset, limit),
   treeStats: (path) => ipcRenderer.invoke('tree:stats', path),
+  graphRelations: (maxDepth, minSharedBytes) =>
+    ipcRenderer.invoke('graph:relations', maxDepth, minSharedBytes),
 
   onScanProgress: subscribe('scan:progress'),
   onTreeRev: subscribe('scan:rev'),
