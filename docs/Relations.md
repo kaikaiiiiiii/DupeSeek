@@ -86,6 +86,15 @@ interface GraphRelationsReply {
 扫描版本（`scan:rev` / `progress.treeRev` → `useTreeSizeStore.rev`）推进后
 以 500ms 防抖强刷。
 
+**尺寸与刷新策略**：
+
+- 画布用 `ResizeObserver` 量测 `.canvas-host`，窗口/布局尺寸变化时同步更新
+  `viewBox` 并重新布局（不做等比缩放糊弄）；KeepAlive 切回时补一次量测。
+- **扫描期间不自动重算关系**：关系聚合需要遍历整个会话，扫描期 rev 频繁推进
+  会造成明显卡顿；扫描完成后（`status: scanning → done`）自动补一次。展示深度 /
+  最小共享字节切换与「刷新布局」按钮随时可用。
+- 扫描进行中且尚无可用数据时，占位提示为「扫描进行中，完成后自动生成目录关系」。
+
 ## Phase 1 已知限制
 
 - 只有目录粒度，没有「块」（位置组 × 内容类）聚类；

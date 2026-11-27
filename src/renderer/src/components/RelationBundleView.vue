@@ -101,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { cluster, hierarchy, type HierarchyPointNode } from 'd3-hierarchy'
 import { curveBundle, line } from 'd3-shape'
 import type { GraphEdge, GraphNode } from '../../../shared/types'
@@ -176,6 +176,7 @@ const showPlaceholder = computed(() => {
 
 const placeholderText = computed(() => {
   if (error.value) return error.value
+  if (scan.status === 'scanning') return '扫描进行中，完成后自动生成目录关系'
   if (reply.value === null) return loading.value ? '' : '尚无扫描数据'
   if (reply.value.edges.length === 0) return '当前扫描结果中没有达到阈值的目录关系'
   return '当前阈值下没有可展示的目录关系'
@@ -386,20 +387,21 @@ function reload(): void {
 }
 
 function scheduleReload(): void {
+  // 扫描期间不自动聚合：关系聚合需遍历整个会话，扫描期 rev 频繁推进会造成明显卡顿；
+  // 扫描结束后由 scan.status 监听统一补一次（参数切换/手动刷新不受影响）
+  if (scan.status === 'scanning') return
   if (timer !== undefined) window.clearTimeout(timer)
-  // 扫描期 rev 推进频繁，关系聚合开销随会话增大，放宽到 2s；结束后 500ms
-  const delay = scan.status === 'scanning' ? 2000 : 500
   timer = window.setTimeout(() => {
     timer = undefined
     void refresh(true)
-  }, delay)
+  }, 500)
 }
 
 function measure(): void {
   const el = hostEl.value
   if (!el) return
-  const w = Math.max(320, el.clientWidth)
-  const h = Math.max(240, el.clientHeight)
+  const w = Math.max(1, el.clientWidth)
+  const h = Math.max(1, el.clientHeight)
   if (w === viewW.value && h === viewH.value) return
   viewW.value = w
   viewH.value = h
@@ -411,6 +413,15 @@ watch(
   () => treesize.rev,
   () => scheduleReload()
 )
+// 扫描结束后补一次聚合：扫描期间不做自动刷新（成本随会话增长，会拖慢主进程）
+watch(
+  () => scan.status,
+  (status, prev) => {
+    if (status === 'done' && prev === 'scanning') scheduleReload()
+  }
+)
+// KeepAlive 切回时元素尺寸可能已变化，补一次量测
+onActivated(() => measure())
 
 onMounted(() => {
   measure()
