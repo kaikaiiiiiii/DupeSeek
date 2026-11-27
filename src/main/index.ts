@@ -76,7 +76,8 @@ function createWindow(): BrowserWindow {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
-    if (is.dev) mainWindow.webContents.openDevTools({ mode: 'bottom' })
+    // 默认不自动打开 DevTools（避免占用界面、影响窗口尺寸验证）；
+    // 开发态需要调试时按 F12 切换（toolkit 的 watchWindowShortcuts 已绑定）
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
